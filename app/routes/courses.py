@@ -92,8 +92,23 @@ def create_race_course(course: RaceCourseCreate, db: Session = Depends(get_db)):
     marks = db.query(RaceMark).filter(RaceMark.course_id == db_course.id).all()
 
     return {
-        **db_course.__dict__,
-        "marks": [mark.__dict__ for mark in marks]
+        "id": db_course.id,
+        "name": db_course.name,
+        "description": db_course.description,
+        "created_by": db_course.created_by,
+        "created_at": db_course.created_at,
+        "config_json": db_course.config_json,
+        "marks": [{
+            "id": m.id,
+            "course_id": m.course_id,
+            "name": m.name,
+            "lat": m.lat,
+            "lon": m.lon,
+            "mark_type": m.mark_type,
+            "color": m.color,
+            "sequence": m.sequence,
+            "shape": m.shape
+        } for m in marks]
     }
 
 @router.get("/courses", response_model=List[RaceCourseResponse])
@@ -104,8 +119,23 @@ def get_race_courses(db: Session = Depends(get_db)):
     for course in courses:
         marks = db.query(RaceMark).filter(RaceMark.course_id == course.id).all()
         result.append({
-            **course.__dict__,
-            "marks": [mark.__dict__ for mark in marks]
+            "id": course.id,
+            "name": course.name,
+            "description": course.description,
+            "created_by": course.created_by,
+            "created_at": course.created_at,
+            "config_json": course.config_json,
+            "marks": [{
+                "id": m.id,
+                "course_id": m.course_id,
+                "name": m.name,
+                "lat": m.lat,
+                "lon": m.lon,
+                "mark_type": m.mark_type,
+                "color": m.color,
+                "sequence": m.sequence,
+                "shape": m.shape
+            } for m in marks]
         })
     return result
 
@@ -118,8 +148,23 @@ def get_race_course(course_id: int, db: Session = Depends(get_db)):
 
     marks = db.query(RaceMark).filter(RaceMark.course_id == course_id).all()
     return {
-        **course.__dict__,
-        "marks": [mark.__dict__ for mark in marks]
+        "id": course.id,
+        "name": course.name,
+        "description": course.description,
+        "created_by": course.created_by,
+        "created_at": course.created_at,
+        "config_json": course.config_json,
+        "marks": [{
+            "id": m.id,
+            "course_id": m.course_id,
+            "name": m.name,
+            "lat": m.lat,
+            "lon": m.lon,
+            "mark_type": m.mark_type,
+            "color": m.color,
+            "sequence": m.sequence,
+            "shape": m.shape
+        } for m in marks]
     }
 
 @router.post("/start-lines", response_model=StartLineResponse)
