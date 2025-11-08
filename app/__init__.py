@@ -1,1 +1,1 @@
-from .db import models  # noqa
+# FastAPI application package
