@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, validator
+import re
 
 from app.db.models import User, Club, Boat
 from app.auth import (
@@ -25,12 +26,19 @@ router = APIRouter()
 
 # Pydantic models for requests/responses
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    email: str
     name: str
     password: str
     club_code: str
     sail_number: Optional[str] = None
     role: Optional[str] = "sailor"
+
+    @validator('email')
+    def valid_email(cls, v):
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(pattern, v):
+            raise ValueError('Invalid email address')
+        return v.lower()
 
     @validator('password')
     def password_strength(cls, v):
@@ -46,7 +54,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
