@@ -9,10 +9,20 @@ import math
 from ..db.models import SessionLocal, TrackPoint, Maneuver, PerformanceBaseline, PerformanceAnomaly, Session, FleetComparison, Boat, VMGOptimization, CoachingRecommendation, WindShift, WindPattern  # uses your existing DB models
 from sqlalchemy import and_
 from geopy.distance import geodesic
-import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.metrics import r2_score
+
+# Optional ML dependencies - AI features disabled if not available
+try:
+    import pandas as pd
+    from sklearn.linear_model import Ridge
+    from sklearn.preprocessing import PolynomialFeatures
+    from sklearn.metrics import r2_score
+    ML_AVAILABLE = True
+except ImportError:
+    pd = None
+    Ridge = None
+    PolynomialFeatures = None
+    r2_score = None
+    ML_AVAILABLE = False
 
 router = APIRouter()
 
