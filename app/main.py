@@ -52,6 +52,14 @@ except Exception as e:
     courses = None
     COURSES_AVAILABLE = False
 
+try:
+    from .routes import clubs
+    CLUBS_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import clubs routes: {e}")
+    clubs = None
+    CLUBS_AVAILABLE = False
+
 app = FastAPI(title="RacePilot API", version="0.1.0")
 
 # Enable CORS for dashboard and mobile app
@@ -161,3 +169,7 @@ if COURSES_AVAILABLE and courses:
 if AI_AVAILABLE and ai:
     app.include_router(ai.router, prefix="/ai", tags=["ai"])
     print("✓ AI routes loaded")
+
+if CLUBS_AVAILABLE and clubs:
+    app.include_router(clubs.router, prefix="/clubs", tags=["clubs"])
+    print("✓ Clubs routes loaded")

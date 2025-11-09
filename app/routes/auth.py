@@ -48,8 +48,8 @@ class RegisterRequest(BaseModel):
 
     @validator('role')
     def valid_role(cls, v):
-        if v not in ['sailor', 'coach', 'admin']:
-            raise ValueError('Role must be sailor, coach, or admin')
+        if v not in ['sailor', 'coach', 'club_admin', 'admin']:
+            raise ValueError('Role must be sailor, coach, club_admin, or admin')
         return v
 
 
