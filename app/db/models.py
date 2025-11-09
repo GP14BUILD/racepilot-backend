@@ -113,5 +113,183 @@ class StartLine(Base):
     favored_end = Column(String, nullable=True)  # 'pin' or 'boat'
     bias_degrees = Column(Float, nullable=True)  # positive = pin favored
 
+class Maneuver(Base):
+    __tablename__ = "maneuvers"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    maneuver_type = Column(String)  # 'tack', 'gybe', 'turn'
+    start_ts = Column(DateTime, index=True)
+    end_ts = Column(DateTime)
+    angle_change_deg = Column(Float)
+    entry_sog_kn = Column(Float)
+    min_sog_kn = Column(Float)
+    time_through_sec = Column(Float)
+    speed_loss_kn = Column(Float)
+    score_0_100 = Column(Integer)
+    start_lat = Column(Float)
+    start_lon = Column(Float)
+    end_lat = Column(Float)
+    end_lon = Column(Float)
+    twd = Column(Float, nullable=True)  # True wind direction at time of maneuver
+    detection_params = Column(JSON, nullable=True)  # Store detection parameters used
+
+class PerformanceBaseline(Base):
+    __tablename__ = "performance_baselines"
+    id = Column(Integer, primary_key=True)
+    boat_id = Column(Integer, ForeignKey("boats.id"), index=True)
+    tws_min = Column(Float)  # Wind speed range min (kts)
+    tws_max = Column(Float)  # Wind speed range max (kts)
+    twa_min = Column(Float)  # Wind angle range min (degrees)
+    twa_max = Column(Float)  # Wind angle range max (degrees)
+    avg_sog = Column(Float)  # Average speed over ground (kts)
+    std_sog = Column(Float)  # Standard deviation of speed
+    sample_count = Column(Integer)  # Number of data points used
+    last_updated = Column(DateTime)
+
+class PerformanceAnomaly(Base):
+    __tablename__ = "performance_anomalies"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    trackpoint_id = Column(Integer, ForeignKey("trackpoints.id"), nullable=True)
+    ts = Column(DateTime, index=True)
+    lat = Column(Float)
+    lon = Column(Float)
+    actual_sog = Column(Float)  # Actual speed
+    expected_sog = Column(Float)  # Expected speed from baseline
+    deviation_kts = Column(Float)  # How much slower/faster
+    z_score = Column(Float)  # Statistical significance
+    severity = Column(String)  # 'minor', 'moderate', 'severe'
+    possible_causes = Column(JSON)  # List of likely explanations
+    wind_speed = Column(Float, nullable=True)
+    wind_angle = Column(Float, nullable=True)
+
+class FleetComparison(Base):
+    __tablename__ = "fleet_comparisons"
+    id = Column(Integer, primary_key=True)
+    session_a_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    session_b_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    boat_a_id = Column(Integer, ForeignKey("boats.id"))
+    boat_b_id = Column(Integer, ForeignKey("boats.id"))
+    comparison_ts = Column(DateTime, index=True)
+
+    # Speed comparison
+    avg_speed_a = Column(Float)
+    avg_speed_b = Column(Float)
+    speed_advantage_kts = Column(Float)  # Positive = A faster
+
+    # VMG comparison
+    avg_vmg_a = Column(Float, nullable=True)
+    avg_vmg_b = Column(Float, nullable=True)
+    vmg_advantage_kts = Column(Float, nullable=True)
+
+    # Tack comparison
+    avg_tack_time_a = Column(Float, nullable=True)
+    avg_tack_time_b = Column(Float, nullable=True)
+    tack_efficiency_advantage = Column(Float, nullable=True)  # Seconds saved per tack
+
+    # Distance comparison
+    total_distance_a = Column(Float)
+    total_distance_b = Column(Float)
+    distance_sailed_ratio = Column(Float)  # A/B
+
+    # Overall metrics
+    winner = Column(String)  # 'boat_a', 'boat_b', or 'tie'
+    performance_gap_percent = Column(Float)  # Overall performance difference
+    comparison_metadata = Column(JSON, nullable=True)
+
+class VMGOptimization(Base):
+    __tablename__ = "vmg_optimizations"
+    id = Column(Integer, primary_key=True)
+    boat_id = Column(Integer, ForeignKey("boats.id"), index=True)
+    tws_min = Column(Float)  # Wind speed range min (kts)
+    tws_max = Column(Float)  # Wind speed range max (kts)
+
+    # Upwind optimization
+    optimal_upwind_angle = Column(Float)  # Degrees from true wind
+    upwind_vmg = Column(Float)  # Best VMG achieved upwind (kts)
+    upwind_sample_count = Column(Integer)  # Training data points
+
+    # Downwind optimization
+    optimal_downwind_angle = Column(Float)  # Degrees from true wind
+    downwind_vmg = Column(Float)  # Best VMG achieved downwind (kts)
+    downwind_sample_count = Column(Integer)  # Training data points
+
+    # Model metadata
+    model_version = Column(String, default="v1")
+    training_accuracy = Column(Float, nullable=True)  # R² score
+    last_trained = Column(DateTime)
+    training_metadata = Column(JSON, nullable=True)  # Store model parameters
+
+class CoachingRecommendation(Base):
+    __tablename__ = "coaching_recommendations"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    ts = Column(DateTime, index=True)
+    lat = Column(Float)
+    lon = Column(Float)
+
+    # Recommendation details
+    recommendation_type = Column(String)  # 'tack_now', 'sail_higher', 'sail_lower', 'wind_shift_coming', 'layline_approach', 'speed_mode', 'vmg_mode'
+    priority = Column(String)  # 'low', 'medium', 'high', 'critical'
+    recommendation_text = Column(String)  # Human-readable coaching advice
+    confidence_score = Column(Integer)  # 0-100, how confident the AI is
+
+    # Context and analysis
+    context_data = Column(JSON)  # Factors considered: current TWA, VMG, wind conditions, position, etc.
+    reasoning = Column(String, nullable=True)  # Why this recommendation was made
+
+    # Tracking effectiveness
+    was_followed = Column(Integer, nullable=True)  # 1=yes, 0=no, null=unknown
+    outcome_data = Column(JSON, nullable=True)  # Measure recommendation effectiveness
+    dismissed = Column(Integer, default=0)  # User dismissed this recommendation
+
+class WindShift(Base):
+    __tablename__ = "wind_shifts"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    start_ts = Column(DateTime, index=True)
+    end_ts = Column(DateTime)
+
+    # Shift characteristics
+    shift_magnitude = Column(Float)  # Degrees of shift
+    shift_direction = Column(String)  # 'left' (counter-clockwise) or 'right' (clockwise)
+    shift_type = Column(String)  # 'persistent', 'oscillating', 'transient'
+    confidence = Column(Float)  # 0-1, confidence in classification
+
+    # Wind conditions
+    avg_tws_before = Column(Float)  # Average wind speed before shift
+    avg_tws_after = Column(Float)  # Average wind speed after shift
+    twd_before = Column(Float)  # True wind direction before shift
+    twd_after = Column(Float)  # True wind direction after shift
+
+    # Pattern analysis
+    oscillation_period = Column(Float, nullable=True)  # Minutes between oscillations (if oscillating)
+    pattern_metadata = Column(JSON, nullable=True)  # Additional pattern data
+
+class WindPattern(Base):
+    __tablename__ = "wind_patterns"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    analyzed_at = Column(DateTime)
+
+    # Overall pattern classification
+    dominant_pattern = Column(String)  # 'persistent_right', 'persistent_left', 'oscillating', 'unstable', 'stable'
+    pattern_strength = Column(Float)  # 0-1, how consistent the pattern is
+
+    # Oscillation analysis (if applicable)
+    is_oscillating = Column(Integer, default=0)  # 1 if oscillating pattern detected
+    avg_oscillation_period = Column(Float, nullable=True)  # Average minutes per cycle
+    oscillation_amplitude = Column(Float, nullable=True)  # Average degrees of oscillation
+
+    # Prediction
+    next_shift_prediction = Column(String, nullable=True)  # 'left', 'right', or 'stable'
+    prediction_confidence = Column(Float, nullable=True)  # 0-1
+
+    # Statistical data
+    total_shifts_detected = Column(Integer)
+    avg_shift_magnitude = Column(Float)
+    wind_stability_score = Column(Float)  # 0-100, higher = more stable
+    analysis_metadata = Column(JSON, nullable=True)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
