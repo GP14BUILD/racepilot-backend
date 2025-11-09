@@ -6,10 +6,10 @@ from sqlalchemy import inspect
 
 app = FastAPI(title="RacePilot API", version="0.1.0")
 
-# Enable CORS for dashboard
+# Enable CORS for dashboard and mobile app
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your Vercel domain
+    allow_origins=["*"],  # Allow all origins for mobile app support
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

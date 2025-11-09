@@ -1,6 +1,7 @@
-from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, ForeignKey, JSON
+from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 import os
+from datetime import datetime
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./racepilot.db")
 if DATABASE_URL.startswith("sqlite"):
@@ -11,29 +12,49 @@ else:
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
+class Club(Base):
+    __tablename__ = "clubs"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    code = Column(String, unique=True, nullable=False, index=True)  # e.g., "BRYC"
+    subscription_tier = Column(String, default='free')  # 'free', 'basic', 'pro'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    settings = Column(JSON, nullable=True)
+    is_active = Column(Boolean, default=True)
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    email = Column(String, unique=True, index=True)
-    name = Column(String)
-    password_hash = Column(String)
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    password_hash = Column(String, nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    role = Column(String, nullable=False, default='sailor')  # 'sailor', 'coach', 'admin'
+    sail_number = Column(String, nullable=True)  # Personal sail number for sailors
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
 
 class Boat(Base):
     __tablename__ = "boats"
     id = Column(Integer, primary_key=True)
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    name = Column(String)
-    klass = Column(String)
-    sail_number = Column(String)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String, nullable=True)
+    klass = Column(String, nullable=True)  # Boat class: "Laser", "420", "GP14", etc.
+    sail_number = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_default = Column(Boolean, default=False)
 
 class Session(Base):
     __tablename__ = "sessions"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
     boat_id = Column(Integer, ForeignKey("boats.id"))
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     title = Column(String)
     start_ts = Column(DateTime)
     end_ts = Column(DateTime, nullable=True)
+    notes = Column(String, nullable=True)
 
 class TrackPoint(Base):
     __tablename__ = "trackpoints"
@@ -117,6 +138,7 @@ class Maneuver(Base):
     __tablename__ = "maneuvers"
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     maneuver_type = Column(String)  # 'tack', 'gybe', 'turn'
     start_ts = Column(DateTime, index=True)
     end_ts = Column(DateTime)
@@ -137,6 +159,7 @@ class PerformanceBaseline(Base):
     __tablename__ = "performance_baselines"
     id = Column(Integer, primary_key=True)
     boat_id = Column(Integer, ForeignKey("boats.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     tws_min = Column(Float)  # Wind speed range min (kts)
     tws_max = Column(Float)  # Wind speed range max (kts)
     twa_min = Column(Float)  # Wind angle range min (degrees)
@@ -150,6 +173,7 @@ class PerformanceAnomaly(Base):
     __tablename__ = "performance_anomalies"
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     trackpoint_id = Column(Integer, ForeignKey("trackpoints.id"), nullable=True)
     ts = Column(DateTime, index=True)
     lat = Column(Float)
@@ -170,6 +194,7 @@ class FleetComparison(Base):
     session_b_id = Column(Integer, ForeignKey("sessions.id"), index=True)
     boat_a_id = Column(Integer, ForeignKey("boats.id"))
     boat_b_id = Column(Integer, ForeignKey("boats.id"))
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     comparison_ts = Column(DateTime, index=True)
 
     # Speed comparison
@@ -201,6 +226,7 @@ class VMGOptimization(Base):
     __tablename__ = "vmg_optimizations"
     id = Column(Integer, primary_key=True)
     boat_id = Column(Integer, ForeignKey("boats.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     tws_min = Column(Float)  # Wind speed range min (kts)
     tws_max = Column(Float)  # Wind speed range max (kts)
 
@@ -224,6 +250,7 @@ class CoachingRecommendation(Base):
     __tablename__ = "coaching_recommendations"
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     ts = Column(DateTime, index=True)
     lat = Column(Float)
     lon = Column(Float)
@@ -247,6 +274,7 @@ class WindShift(Base):
     __tablename__ = "wind_shifts"
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     start_ts = Column(DateTime, index=True)
     end_ts = Column(DateTime)
 
@@ -270,6 +298,7 @@ class WindPattern(Base):
     __tablename__ = "wind_patterns"
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     analyzed_at = Column(DateTime)
 
     # Overall pattern classification

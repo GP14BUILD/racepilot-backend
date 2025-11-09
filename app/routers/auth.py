@@ -20,7 +20,7 @@ from app.auth import (
     can_edit_user,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 # Pydantic models for requests/responses
