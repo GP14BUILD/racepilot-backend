@@ -1,8 +1,56 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .db.models import init_db, Base, engine
-from .routes import auth, sessions, telemetry, analytics, ai, courses
 from sqlalchemy import inspect
+
+# Import routes individually with error handling
+try:
+    from .routes import auth
+    AUTH_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import auth routes: {e}")
+    auth = None
+    AUTH_AVAILABLE = False
+
+try:
+    from .routes import sessions
+    SESSIONS_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import sessions routes: {e}")
+    sessions = None
+    SESSIONS_AVAILABLE = False
+
+try:
+    from .routes import telemetry
+    TELEMETRY_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import telemetry routes: {e}")
+    telemetry = None
+    TELEMETRY_AVAILABLE = False
+
+try:
+    from .routes import analytics
+    ANALYTICS_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import analytics routes: {e}")
+    analytics = None
+    ANALYTICS_AVAILABLE = False
+
+try:
+    from .routes import ai
+    AI_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import ai routes: {e}")
+    ai = None
+    AI_AVAILABLE = False
+
+try:
+    from .routes import courses
+    COURSES_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import courses routes: {e}")
+    courses = None
+    COURSES_AVAILABLE = False
 
 app = FastAPI(title="RacePilot API", version="0.1.0")
 
@@ -89,11 +137,27 @@ def create_test_club():
     finally:
         db.close()
 
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
-app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"])
-app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
-app.include_router(courses.router, prefix="/courses", tags=["courses"])
+# Include routers that loaded successfully
+if AUTH_AVAILABLE and auth:
+    app.include_router(auth.router, prefix="/auth", tags=["auth"])
+    print("✓ Auth routes loaded")
 
-# ✅ AI endpoints
-app.include_router(ai.router, prefix="/ai", tags=["ai"])
+if SESSIONS_AVAILABLE and sessions:
+    app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
+    print("✓ Sessions routes loaded")
+
+if TELEMETRY_AVAILABLE and telemetry:
+    app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"])
+    print("✓ Telemetry routes loaded")
+
+if ANALYTICS_AVAILABLE and analytics:
+    app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+    print("✓ Analytics routes loaded")
+
+if COURSES_AVAILABLE and courses:
+    app.include_router(courses.router, prefix="/courses", tags=["courses"])
+    print("✓ Courses routes loaded")
+
+if AI_AVAILABLE and ai:
+    app.include_router(ai.router, prefix="/ai", tags=["ai"])
+    print("✓ AI routes loaded")
