@@ -56,6 +56,39 @@ def run_migration():
             "error": str(e)
         }
 
+@app.post("/create-test-club")
+def create_test_club():
+    """Create TEST club for development."""
+    from sqlalchemy import text
+    from datetime import datetime
+    from .db.models import SessionLocal
+
+    db = SessionLocal()
+    try:
+        # Check if TEST club exists
+        result = db.execute(text("SELECT id FROM clubs WHERE code = 'TEST'"))
+        existing = result.fetchone()
+
+        if existing:
+            return {"success": True, "message": "TEST club already exists", "club_id": existing[0]}
+
+        # Create TEST club
+        db.execute(text("""
+            INSERT INTO clubs (name, code, subscription_tier, is_active)
+            VALUES ('Test Sailing Club', 'TEST', 'free', 1)
+        """))
+        db.commit()
+
+        result = db.execute(text("SELECT id FROM clubs WHERE code = 'TEST'"))
+        club_id = result.fetchone()[0]
+
+        return {"success": True, "message": "TEST club created", "club_id": club_id}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
 app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"])
