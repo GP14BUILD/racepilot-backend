@@ -23,6 +23,9 @@ class ClubRequest(BaseModel):
     location: Optional[str] = None
     website: Optional[str] = None
     is_active: bool = True
+    privacy_level: Optional[str] = 'club_only'  # 'public', 'club_only', 'private'
+    share_to_global: Optional[bool] = False
+    allow_anonymous_sharing: Optional[bool] = True
 
 
 class ClubResponse(BaseModel):
@@ -35,6 +38,9 @@ class ClubResponse(BaseModel):
     is_active: bool
     created_at: datetime
     member_count: int = 0
+    privacy_level: Optional[str] = 'club_only'
+    share_to_global: Optional[bool] = False
+    allow_anonymous_sharing: Optional[bool] = True
 
     class Config:
         from_attributes = True
@@ -112,7 +118,10 @@ def list_clubs(
             website=club.website,
             is_active=club.is_active,
             created_at=club.created_at,
-            member_count=member_count
+            member_count=member_count,
+            privacy_level=club.privacy_level or 'club_only',
+            share_to_global=club.share_to_global or False,
+            allow_anonymous_sharing=club.allow_anonymous_sharing if club.allow_anonymous_sharing is not None else True
         )
         result.append(club_data)
 
@@ -156,7 +165,10 @@ def get_club(
         website=club.website,
         is_active=club.is_active,
         created_at=club.created_at,
-        member_count=member_count
+        member_count=member_count,
+        privacy_level=club.privacy_level or 'club_only',
+        share_to_global=club.share_to_global or False,
+        allow_anonymous_sharing=club.allow_anonymous_sharing if club.allow_anonymous_sharing is not None else True
     )
 
 
@@ -193,6 +205,9 @@ def create_club(
         location=request.location,
         website=request.website,
         is_active=request.is_active,
+        privacy_level=request.privacy_level or 'club_only',
+        share_to_global=request.share_to_global or False,
+        allow_anonymous_sharing=request.allow_anonymous_sharing if request.allow_anonymous_sharing is not None else True,
         created_at=datetime.utcnow()
     )
 
@@ -209,7 +224,10 @@ def create_club(
         website=new_club.website,
         is_active=new_club.is_active,
         created_at=new_club.created_at,
-        member_count=0
+        member_count=0,
+        privacy_level=new_club.privacy_level or 'club_only',
+        share_to_global=new_club.share_to_global or False,
+        allow_anonymous_sharing=new_club.allow_anonymous_sharing if new_club.allow_anonymous_sharing is not None else True
     )
 
 
@@ -247,6 +265,9 @@ def update_club(
     club.location = request.location
     club.website = request.website
     club.is_active = request.is_active
+    club.privacy_level = request.privacy_level or 'club_only'
+    club.share_to_global = request.share_to_global or False
+    club.allow_anonymous_sharing = request.allow_anonymous_sharing if request.allow_anonymous_sharing is not None else True
 
     db.commit()
     db.refresh(club)
@@ -262,7 +283,10 @@ def update_club(
         website=club.website,
         is_active=club.is_active,
         created_at=club.created_at,
-        member_count=member_count
+        member_count=member_count,
+        privacy_level=club.privacy_level or 'club_only',
+        share_to_global=club.share_to_global or False,
+        allow_anonymous_sharing=club.allow_anonymous_sharing if club.allow_anonymous_sharing is not None else True
     )
 
 

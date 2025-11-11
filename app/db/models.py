@@ -22,6 +22,16 @@ class Club(Base):
     settings = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True)
 
+    # Privacy settings
+    privacy_level = Column(String, default='club_only')  # 'public', 'club_only', 'private'
+    share_to_global = Column(Boolean, default=False)  # Opt-in for global platform
+    allow_anonymous_sharing = Column(Boolean, default=True)  # Anonymize data when shared globally
+
+    # Additional fields for global platform
+    description = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    website = Column(String, nullable=True)
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
