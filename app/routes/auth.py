@@ -122,13 +122,21 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
 
-    # Validate club code
+    # Get or create club
     club = db.query(Club).filter(Club.code == request.club_code.upper()).first()
     if not club:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Club with code '{request.club_code}' not found"
+        # Auto-create club if it doesn't exist
+        club = Club(
+            name=f"{request.club_code.upper()} Sailing Club",
+            code=request.club_code.upper(),
+            description="Auto-created club",
+            location="",
+            is_active=True,
+            created_at=datetime.utcnow()
         )
+        db.add(club)
+        db.commit()
+        db.refresh(club)
 
     if not club.is_active:
         raise HTTPException(
