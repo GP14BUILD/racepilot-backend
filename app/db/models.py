@@ -330,5 +330,48 @@ class WindPattern(Base):
     wind_stability_score = Column(Float)  # 0-100, higher = more stable
     analysis_metadata = Column(JSON, nullable=True)
 
+class Challenge(Base):
+    __tablename__ = "challenges"
+    id = Column(Integer, primary_key=True)
+    creator_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True, nullable=False)  # The "ghost" track
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+
+    # Challenge details
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    difficulty = Column(String, default='medium')  # 'easy', 'medium', 'hard' - auto-calculated
+
+    # Access control
+    is_public = Column(Boolean, default=False)  # Public challenges visible to everyone
+    expires_at = Column(DateTime, nullable=True)  # Optional expiration
+
+    # Conditions/filters
+    boat_class = Column(String, nullable=True)  # Required boat class to attempt
+    min_wind_speed = Column(Float, nullable=True)  # Minimum wind speed
+    max_wind_speed = Column(Float, nullable=True)  # Maximum wind speed
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    attempt_count = Column(Integer, default=0)  # Number of attempts
+    best_time = Column(Float, nullable=True)  # Best time in seconds vs ghost
+
+class ChallengeAttempt(Base):
+    __tablename__ = "challenge_attempts"
+    id = Column(Integer, primary_key=True)
+    challenge_id = Column(Integer, ForeignKey("challenges.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True, nullable=False)  # The attempt session
+
+    # Results
+    time_difference = Column(Float, nullable=False)  # Seconds vs ghost (negative = beat ghost)
+    max_lead = Column(Float, nullable=True)  # Maximum lead in seconds
+    max_deficit = Column(Float, nullable=True)  # Maximum deficit in seconds
+    result = Column(String, nullable=False)  # 'won', 'lost', 'tie'
+
+    # Metadata
+    submitted_at = Column(DateTime, default=datetime.utcnow, index=True)
+    xp_earned = Column(Integer, default=0)  # XP earned from this attempt
+
 def init_db():
     Base.metadata.create_all(bind=engine)
