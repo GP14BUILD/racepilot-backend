@@ -373,5 +373,31 @@ class ChallengeAttempt(Base):
     submitted_at = Column(DateTime, default=datetime.utcnow, index=True)
     xp_earned = Column(Integer, default=0)  # XP earned from this attempt
 
+class Video(Base):
+    __tablename__ = "videos"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+
+    # File information
+    filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)  # Path to video file on disk
+    file_size = Column(Integer, nullable=False)  # Size in bytes
+    duration = Column(Float, nullable=True)  # Duration in seconds
+
+    # URLs
+    thumbnail_url = Column(String, nullable=True)  # Thumbnail image URL
+    video_url = Column(String, nullable=True)  # Streaming URL
+
+    # Synchronization
+    offset_seconds = Column(Float, default=0.0)  # Time offset from session start (for GPS sync)
+
+    # Metadata
+    title = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    is_public = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 def init_db():
     Base.metadata.create_all(bind=engine)

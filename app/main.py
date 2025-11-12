@@ -68,6 +68,14 @@ except Exception as e:
     challenges = None
     CHALLENGES_AVAILABLE = False
 
+try:
+    from .routes import videos
+    VIDEOS_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import videos routes: {e}")
+    videos = None
+    VIDEOS_AVAILABLE = False
+
 app = FastAPI(title="RacePilot API", version="0.1.0")
 
 # Enable CORS for dashboard and mobile app
@@ -185,3 +193,7 @@ if CLUBS_AVAILABLE and clubs:
 if CHALLENGES_AVAILABLE and challenges:
     app.include_router(challenges.router, prefix="/challenges", tags=["challenges"])
     print("✓ Challenges routes loaded")
+
+if VIDEOS_AVAILABLE and videos:
+    app.include_router(videos.router, tags=["videos"])
+    print("✓ Videos routes loaded")
