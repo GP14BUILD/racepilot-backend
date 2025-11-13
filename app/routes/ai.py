@@ -1,12 +1,14 @@
 # app/routes/ai.py
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import math
+from sqlalchemy.orm import Session as DbSession
 
-from ..db.models import SessionLocal, TrackPoint, Maneuver, PerformanceBaseline, PerformanceAnomaly, Session, FleetComparison, Boat, VMGOptimization, CoachingRecommendation, WindShift, WindPattern  # uses your existing DB models
+from ..db.models import SessionLocal, TrackPoint, Maneuver, PerformanceBaseline, PerformanceAnomaly, Session, FleetComparison, Boat, VMGOptimization, CoachingRecommendation, WindShift, WindPattern, User
+from ..auth import require_subscription, get_current_user, get_db
 from sqlalchemy import and_
 from geopy.distance import geodesic
 
@@ -694,8 +696,16 @@ def calculate_vmg(sog: float, cog: float, twa: float, twd: float) -> float:
 
 
 @router.post("/fleet/compare")
-def compare_sessions(session_a_id: int, session_b_id: int):
-    """Compare two sailing sessions with detailed performance metrics."""
+def compare_sessions(
+    session_a_id: int,
+    session_b_id: int,
+    current_user: User = Depends(require_subscription("fleet_replay"))
+):
+    """
+    Compare two sailing sessions with detailed performance metrics.
+
+    **Requires active subscription with fleet replay feature**
+    """
     db = SessionLocal()
     try:
         # Get sessions
@@ -884,8 +894,16 @@ def compare_sessions(session_a_id: int, session_b_id: int):
 
 
 @router.get("/fleet/leaderboard")
-def get_leaderboard(metric: str = "avg_speed", limit: int = 10):
-    """Get leaderboard of top performers by various metrics."""
+def get_leaderboard(
+    metric: str = "avg_speed",
+    limit: int = 10,
+    current_user: User = Depends(require_subscription("fleet_replay"))
+):
+    """
+    Get leaderboard of top performers by various metrics.
+
+    **Requires active subscription with fleet replay feature**
+    """
     db = SessionLocal()
     try:
         # Get all sessions with track points
@@ -1273,7 +1291,11 @@ def calculate_vmg(sog: float, twa: float) -> float:
 
 
 @router.post("/coaching/analyze/{session_id}")
-def analyze_and_recommend(session_id: int, current_time: Optional[datetime] = None):
+def analyze_and_recommend(
+    session_id: int,
+    current_time: Optional[datetime] = None,
+    current_user: User = Depends(require_subscription("ai_coaching"))
+):
     """
     Multi-criteria coaching engine that analyzes current sailing conditions
     and provides contextual recommendations.
@@ -1284,6 +1306,8 @@ def analyze_and_recommend(session_id: int, current_time: Optional[datetime] = No
     - Maneuver timing (should you tack?)
     - Wind shift patterns (is the wind shifting?)
     - Tactical positioning
+
+    **Requires active subscription with AI coaching feature**
     """
     db = SessionLocal()
     try:
@@ -1701,13 +1725,20 @@ def normalize_angle_difference(angle1: float, angle2: float) -> float:
 
 
 @router.post("/wind/detect-shifts/{session_id}")
-def detect_wind_shifts(session_id: int, min_shift_deg: float = 8.0, window_minutes: int = 3):
+def detect_wind_shifts(
+    session_id: int,
+    min_shift_deg: float = 8.0,
+    window_minutes: int = 3,
+    current_user: User = Depends(require_subscription("wind_analysis"))
+):
     """
     Detect wind shifts in a session using sliding window analysis.
 
     Parameters:
     - min_shift_deg: Minimum shift magnitude to detect (default 8°)
     - window_minutes: Window size for detecting shifts (default 3 minutes)
+
+    **Requires active subscription with wind analysis feature**
     """
     db = SessionLocal()
     try:
@@ -1852,10 +1883,15 @@ def detect_wind_shifts(session_id: int, min_shift_deg: float = 8.0, window_minut
 
 
 @router.post("/wind/analyze-pattern/{session_id}")
-def analyze_wind_pattern(session_id: int):
+def analyze_wind_pattern(
+    session_id: int,
+    current_user: User = Depends(require_subscription("wind_analysis"))
+):
     """
     Analyze overall wind pattern for a session using ML techniques.
     Classifies as persistent, oscillating, unstable, or stable.
+
+    **Requires active subscription with wind analysis feature**
     """
     db = SessionLocal()
     try:

@@ -4,10 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
-venv/
-.venv/
-ENV/
 build/
 develop-eggs/
 dist/
@@ -25,14 +21,21 @@ wheels/
 *.egg
 
 # Virtual Environment
-.venv
 venv/
+.venv/
 ENV/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
+racepilot.db
 
 # IDE
 .vscode/
@@ -45,10 +48,6 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Environment variables
-.env
-.env.local
-
 # Logs
 *.log
 
@@ -56,3 +55,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Alembic
+alembic/versions/*.pyc

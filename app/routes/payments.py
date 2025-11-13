@@ -20,14 +20,14 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 # Subscription plans
 PLANS = {
     "pro_monthly": {
-        "name": "Pro Monthly",
-        "price_id": "price_xxx",  # From Stripe Dashboard
+        "name": "RacePilot Pro Monthly",
+        "price_id": "price_1ST4Xc8ii5YQqiUVFqpDDbkZ",  # Real Stripe Price ID
         "price": 9.99,
         "interval": "month"
     },
     "club_monthly": {
-        "name": "Club Monthly",
-        "price_id": "price_yyy",
+        "name": "RacePilot Club Monthly",
+        "price_id": "price_1ST5F78ii5YQqiUVjakzhbL8",  # Real Stripe Price ID
         "price": 49.99,
         "interval": "month"
     }

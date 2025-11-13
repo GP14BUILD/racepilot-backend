@@ -3,6 +3,7 @@ Authentication and authorization utilities for RacePilot.
 Handles JWT tokens, password hashing, and user permissions.
 """
 
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from app.db.models import SessionLocal, User
 
 # Configuration
-SECRET_KEY = "your-secret-key-change-this-in-production-use-env-var"  # TODO: Move to environment variable
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-CHANGE-IN-PRODUCTION")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
@@ -302,3 +303,112 @@ def can_view_session(current_user: User, session_club_id: int, session_user_id: 
         return True
 
     return False
+
+
+# Subscription-based authorization
+def get_user_subscription_features(user: User, db: Session) -> dict:
+    """
+    Get the subscription features available to a user.
+
+    Returns dict with:
+    - subscribed: bool
+    - plan: str
+    - max_sessions: int (-1 for unlimited)
+    - ai_coaching: bool
+    - fleet_replay: bool
+    - wind_analysis: bool
+    """
+    from app.db.models import Subscription
+
+    # Check for active subscription
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.status == "active"
+    ).first()
+
+    if subscription and subscription.plan in ["pro_monthly", "club_monthly"]:
+        # Pro or Club subscription - unlimited features
+        return {
+            "subscribed": True,
+            "plan": subscription.plan,
+            "max_sessions": -1,  # Unlimited
+            "ai_coaching": True,
+            "fleet_replay": True,
+            "wind_analysis": True
+        }
+
+    # Free tier - limited features
+    return {
+        "subscribed": False,
+        "plan": "free",
+        "max_sessions": 5,
+        "ai_coaching": False,
+        "fleet_replay": False,
+        "wind_analysis": False
+    }
+
+
+def require_subscription(feature: str = None):
+    """
+    Dependency to require an active subscription.
+
+    Usage:
+        @app.get("/premium-feature")
+        def premium_endpoint(user: User = Depends(require_subscription())):
+            ...
+
+    Or for specific features:
+        @app.get("/ai-coaching")
+        def ai_endpoint(user: User = Depends(require_subscription("ai_coaching"))):
+            ...
+    """
+    def subscription_checker(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+    ) -> User:
+        features = get_user_subscription_features(user, db)
+
+        if not features["subscribed"]:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Active subscription required. Please upgrade to Pro or Club tier."
+            )
+
+        # Check specific feature if requested
+        if feature and not features.get(feature, False):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"This feature requires a subscription. Feature: {feature}"
+            )
+
+        return user
+
+    return subscription_checker
+
+
+def check_session_limit(user: User, db: Session):
+    """
+    Check if user has exceeded their monthly session limit.
+    Raises HTTPException if limit exceeded.
+    """
+    from app.db.models import Session as DbSession
+    from datetime import datetime, timedelta
+
+    features = get_user_subscription_features(user, db)
+
+    # Unlimited sessions for subscribed users
+    if features["max_sessions"] == -1:
+        return
+
+    # Count sessions this month
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    session_count = db.query(DbSession).filter(
+        DbSession.user_id == user.id,
+        DbSession.created_at >= month_start
+    ).count()
+
+    if session_count >= features["max_sessions"]:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Monthly session limit reached ({features['max_sessions']} sessions). Please upgrade to Pro for unlimited sessions."
+        )

@@ -1,20 +1,33 @@
-from fastapi import APIRouter, HTTPException
-from ..db.models import SessionLocal, Session as S, TrackPoint
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session as DbSession
+from ..db.models import SessionLocal, Session as S, TrackPoint, User
 from ..schemas import SessionCreate
+from ..auth import get_current_user, get_db, check_session_limit
 from datetime import datetime
 from typing import List
 
 router = APIRouter()
 
 @router.post("")
-def create_session(req: SessionCreate):
-    db = SessionLocal()
-    try:
-        s = S(user_id=req.user_id, boat_id=req.boat_id, title=req.title, start_ts=req.start_ts)
-        db.add(s); db.commit(); db.refresh(s)
-        return {"id": s.id}
-    finally:
-        db.close()
+def create_session(
+    req: SessionCreate,
+    current_user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db)
+):
+    """
+    Create a new sailing session.
+    Free tier users are limited to 5 sessions per month.
+    Pro/Club subscribers have unlimited sessions.
+    """
+    # Check session limit for free users
+    check_session_limit(current_user, db)
+
+    # Create session
+    s = S(user_id=req.user_id, boat_id=req.boat_id, title=req.title, start_ts=req.start_ts)
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return {"id": s.id}
 
 @router.get("")
 def list_sessions():

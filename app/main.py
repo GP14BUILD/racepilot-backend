@@ -3,6 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db.models import init_db, Base, engine
 from sqlalchemy import inspect
 
+# Try to load dotenv if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv('.env.local')
+    load_dotenv()
+except ImportError:
+    # dotenv not installed, environment variables must be set manually
+    pass
+
 # Import routes individually with error handling
 try:
     from .routes import auth
