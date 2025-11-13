@@ -399,5 +399,30 @@ class Video(Base):
     is_public = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+
+    # Stripe integration
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, unique=True, nullable=True, index=True)
+
+    # Subscription details
+    plan_id = Column(String, nullable=False)  # 'free', 'pro_monthly', 'club_monthly'
+    status = Column(String, nullable=False)  # 'active', 'cancelled', 'past_due', 'trialing'
+
+    # Dates
+    created_at = Column(DateTime, default=datetime.utcnow)
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True, index=True)
+    cancelled_at = Column(DateTime, nullable=True)
+
+    # Features (denormalized for quick access)
+    max_sessions = Column(Integer, default=5)  # -1 for unlimited
+    has_ai_coaching = Column(Boolean, default=False)
+    has_fleet_replay = Column(Boolean, default=False)
+    has_wind_analysis = Column(Boolean, default=False)
+
 def init_db():
     Base.metadata.create_all(bind=engine)

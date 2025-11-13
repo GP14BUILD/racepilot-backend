@@ -76,12 +76,27 @@ except Exception as e:
     videos = None
     VIDEOS_AVAILABLE = False
 
+try:
+    from .routes import payments
+    PAYMENTS_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import payments routes: {e}")
+    payments = None
+    PAYMENTS_AVAILABLE = False
+
 app = FastAPI(title="RacePilot API", version="0.1.0")
 
 # Enable CORS for dashboard and mobile app
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for mobile app support
+    allow_origins=[
+        "http://localhost:5173",  # Local development
+        "http://localhost:3000",  # Alternative local port
+        "https://racepilot-dashboard.vercel.app",  # Production
+        "https://racepilot-dashboard-k8upa8p5h-kevins-projects-5141f84d.vercel.app",  # Preview
+        "https://*.vercel.app",  # All Vercel preview deployments
+        "*"  # Mobile app support (consider restricting this later)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -164,36 +179,40 @@ def create_test_club():
 # Include routers that loaded successfully
 if AUTH_AVAILABLE and auth:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
-    print("✓ Auth routes loaded")
+    print("[OK] Auth routes loaded")
 
 if SESSIONS_AVAILABLE and sessions:
     app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
-    print("✓ Sessions routes loaded")
+    print("[OK] Sessions routes loaded")
 
 if TELEMETRY_AVAILABLE and telemetry:
     app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"])
-    print("✓ Telemetry routes loaded")
+    print("[OK] Telemetry routes loaded")
 
 if ANALYTICS_AVAILABLE and analytics:
     app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
-    print("✓ Analytics routes loaded")
+    print("[OK] Analytics routes loaded")
 
 if COURSES_AVAILABLE and courses:
     app.include_router(courses.router, prefix="/courses", tags=["courses"])
-    print("✓ Courses routes loaded")
+    print("[OK] Courses routes loaded")
 
 if AI_AVAILABLE and ai:
     app.include_router(ai.router, prefix="/ai", tags=["ai"])
-    print("✓ AI routes loaded")
+    print("[OK] AI routes loaded")
 
 if CLUBS_AVAILABLE and clubs:
     app.include_router(clubs.router, prefix="/clubs", tags=["clubs"])
-    print("✓ Clubs routes loaded")
+    print("[OK] Clubs routes loaded")
 
 if CHALLENGES_AVAILABLE and challenges:
-    app.include_router(challenges.router, prefix="/challenges", tags=["challenges"])
-    print("✓ Challenges routes loaded")
+    app.include_router(challenges.router, tags=["challenges"])
+    print("[OK] Challenges routes loaded")
 
 if VIDEOS_AVAILABLE and videos:
     app.include_router(videos.router, tags=["videos"])
-    print("✓ Videos routes loaded")
+    print("[OK] Videos routes loaded")
+
+if PAYMENTS_AVAILABLE and payments:
+    app.include_router(payments.router)
+    print("[OK] Payments routes loaded")
