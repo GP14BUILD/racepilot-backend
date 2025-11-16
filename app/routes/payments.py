@@ -17,18 +17,18 @@ router = APIRouter(prefix="/payments", tags=["Payments"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-# Subscription plans
+# Subscription plans (TEST MODE)
 PLANS = {
     "pro_monthly": {
         "name": "RacePilot Pro Monthly",
-        "price_id": "price_1ST4Xc8ii5YQqiUVFqpDDbkZ",  # Real Stripe Price ID
-        "price": 9.99,
+        "price_id": "price_1STuv15SUcNBBXSmNa2F75LY",  # Test mode price ID (£7.99/month)
+        "price": 7.99,
         "interval": "month"
     },
     "club_monthly": {
         "name": "RacePilot Club Monthly",
-        "price_id": "price_1ST5F78ii5YQqiUVjakzhbL8",  # Real Stripe Price ID
-        "price": 49.99,
+        "price_id": "price_1STuyh5SUcNBBXSmMLOfiwgh",  # Test mode price ID (£40/month)
+        "price": 40.00,
         "interval": "month"
     }
 }
