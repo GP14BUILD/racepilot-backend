@@ -17,8 +17,10 @@ from app.auth import get_db, get_current_user
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
 # Initialize Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+# Strip whitespace/newlines from API keys (Railway sometimes adds them)
+stripe_key = os.getenv("STRIPE_SECRET_KEY", "")
+stripe.api_key = stripe_key.strip() if stripe_key else None
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 
 # Subscription plans (TEST MODE)
 PLANS = {
