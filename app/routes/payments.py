@@ -3,10 +3,13 @@ Payment and subscription management with Stripe
 """
 import stripe
 import os
+import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.db.models import User, Subscription
 from app.auth import get_db, get_current_user
@@ -54,6 +57,9 @@ async def create_checkout_session(
     plan = PLANS[request.plan_id]
 
     try:
+        logger.info(f"Creating checkout session for user {current_user.email}, plan {request.plan_id}")
+        logger.info(f"Using price ID: {plan['price_id']}")
+
         # Create Stripe checkout session
         checkout_session = stripe.checkout.Session.create(
             customer_email=current_user.email,
@@ -71,13 +77,21 @@ async def create_checkout_session(
             }
         )
 
+        logger.info(f"Checkout session created successfully: {checkout_session.id}")
         return {
             "checkout_url": checkout_session.url,
             "session_id": checkout_session.id
         }
 
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error creating checkout: {str(e)}")
+        logger.error(f"Stripe error type: {type(e).__name__}")
+        logger.error(f"Stripe error details: {e.user_message if hasattr(e, 'user_message') else 'No user message'}")
+        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Unexpected error creating checkout: {str(e)}")
+        logger.exception("Full traceback:")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 @router.post("/webhook")
