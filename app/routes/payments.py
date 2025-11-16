@@ -57,8 +57,10 @@ async def create_checkout_session(
     plan = PLANS[request.plan_id]
 
     try:
-        logger.info(f"Creating checkout session for user {current_user.email}, plan {request.plan_id}")
-        logger.info(f"Using price ID: {plan['price_id']}")
+        print(f"[CHECKOUT] Creating session for {current_user.email}, plan {request.plan_id}", flush=True)
+        print(f"[CHECKOUT] Price ID: {plan['price_id']}", flush=True)
+        print(f"[CHECKOUT] Stripe API key exists: {stripe.api_key is not None}", flush=True)
+        print(f"[CHECKOUT] Stripe API key starts with: {stripe.api_key[:12] if stripe.api_key else 'NONE'}", flush=True)
 
         # Create Stripe checkout session
         checkout_session = stripe.checkout.Session.create(
@@ -77,21 +79,24 @@ async def create_checkout_session(
             }
         )
 
-        logger.info(f"Checkout session created successfully: {checkout_session.id}")
+        print(f"[CHECKOUT] Success! Session ID: {checkout_session.id}", flush=True)
         return {
             "checkout_url": checkout_session.url,
             "session_id": checkout_session.id
         }
 
     except stripe.error.StripeError as e:
-        logger.error(f"Stripe error creating checkout: {str(e)}")
-        logger.error(f"Stripe error type: {type(e).__name__}")
-        logger.error(f"Stripe error details: {e.user_message if hasattr(e, 'user_message') else 'No user message'}")
-        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
+        error_msg = f"Stripe {type(e).__name__}: {str(e)}"
+        print(f"[CHECKOUT ERROR] {error_msg}", flush=True)
+        if hasattr(e, 'json_body'):
+            print(f"[CHECKOUT ERROR] JSON body: {e.json_body}", flush=True)
+        raise HTTPException(status_code=500, detail=error_msg)
     except Exception as e:
-        logger.error(f"Unexpected error creating checkout: {str(e)}")
-        logger.exception("Full traceback:")
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        print(f"[CHECKOUT ERROR] Unexpected: {error_msg}", flush=True)
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.post("/webhook")
