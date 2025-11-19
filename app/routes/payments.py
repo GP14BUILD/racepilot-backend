@@ -108,11 +108,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
     sig_header = request.headers.get('stripe-signature')
 
+    print(f"[WEBHOOK] Received webhook event", flush=True)
+
     try:
         event = stripe.Webhook.construct_event(
             payload, sig_header, STRIPE_WEBHOOK_SECRET
         )
+        print(f"[WEBHOOK] Event type: {event['type']}", flush=True)
     except Exception as e:
+        print(f"[WEBHOOK ERROR] Validation failed: {str(e)}", flush=True)
         raise HTTPException(status_code=400, detail=str(e))
 
     # Handle subscription created
@@ -120,19 +124,34 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         session = event['data']['object']
         user_id = session['metadata']['user_id']
         plan_id = session['metadata']['plan_id']
+        stripe_subscription_id = session['subscription']
 
-        # Create subscription record
-        subscription = Subscription(
-            user_id=user_id,
-            stripe_subscription_id=session['subscription'],
-            plan_id=plan_id,
-            status='active',
-            current_period_end=datetime.fromtimestamp(
-                session['subscription']['current_period_end']
+        print(f"[WEBHOOK] checkout.session.completed for user {user_id}, plan {plan_id}", flush=True)
+        print(f"[WEBHOOK] Stripe subscription ID: {stripe_subscription_id}", flush=True)
+
+        # Fetch full subscription object from Stripe to get current_period_end
+        try:
+            stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+
+            # Create subscription record
+            subscription = Subscription(
+                user_id=user_id,
+                stripe_subscription_id=stripe_subscription_id,
+                plan_id=plan_id,
+                status='active',
+                current_period_end=datetime.fromtimestamp(
+                    stripe_subscription.current_period_end
+                )
             )
-        )
-        db.add(subscription)
-        db.commit()
+            db.add(subscription)
+            db.commit()
+
+            print(f"[WEBHOOK] Subscription created successfully for user {user_id}", flush=True)
+        except Exception as e:
+            print(f"[WEBHOOK ERROR] Failed to create subscription: {str(e)}", flush=True)
+            import traceback
+            traceback.print_exc()
+            raise
 
     # Handle subscription updated
     elif event['type'] == 'customer.subscription.updated':
