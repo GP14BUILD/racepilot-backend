@@ -133,14 +133,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         try:
             stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
 
-            # Create subscription record
+            print(f"[WEBHOOK] Retrieved subscription: {stripe_subscription.id}", flush=True)
+            print(f"[WEBHOOK] Subscription dict keys: {list(stripe_subscription.keys())[:10]}", flush=True)
+
+            # Create subscription record - access as dictionary
             subscription = Subscription(
                 user_id=user_id,
                 stripe_subscription_id=stripe_subscription_id,
                 plan_id=plan_id,
                 status='active',
                 current_period_end=datetime.fromtimestamp(
-                    stripe_subscription.current_period_end
+                    stripe_subscription['current_period_end']
                 )
             )
             db.add(subscription)
