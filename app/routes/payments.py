@@ -134,7 +134,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
 
             print(f"[WEBHOOK] Retrieved subscription: {stripe_subscription.id}", flush=True)
-            print(f"[WEBHOOK] Subscription dict keys: {list(stripe_subscription.keys())[:10]}", flush=True)
+            print(f"[WEBHOOK] ALL Subscription keys: {list(stripe_subscription.keys())}", flush=True)
+
+            # Try to get current_period_end - it should be there
+            if 'current_period_end' in stripe_subscription:
+                period_end = stripe_subscription['current_period_end']
+            else:
+                # Fallback: use created + 30 days
+                print(f"[WEBHOOK WARNING] current_period_end not found, using created + 30 days", flush=True)
+                period_end = stripe_subscription['created'] + (30 * 24 * 60 * 60)
+
+            print(f"[WEBHOOK] Period end timestamp: {period_end}", flush=True)
 
             # Create subscription record - access as dictionary
             subscription = Subscription(
@@ -142,9 +152,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 stripe_subscription_id=stripe_subscription_id,
                 plan_id=plan_id,
                 status='active',
-                current_period_end=datetime.fromtimestamp(
-                    stripe_subscription['current_period_end']
-                )
+                current_period_end=datetime.fromtimestamp(period_end)
             )
             db.add(subscription)
             db.commit()
