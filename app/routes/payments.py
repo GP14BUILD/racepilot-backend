@@ -28,13 +28,23 @@ PLANS = {
         "name": "RacePilot Pro Monthly",
         "price_id": "price_1STuv15SUcNBBXSmNa2F75LY",  # Test mode price ID (£7.99/month)
         "price": 7.99,
-        "interval": "month"
+        "interval": "month",
+        "features": {
+            "ai_coaching": True,
+            "fleet_replay": True,
+            "wind_analysis": True
+        }
     },
     "club_monthly": {
         "name": "RacePilot Club Monthly",
         "price_id": "price_1STuyh5SUcNBBXSmMLOfiwgh",  # Test mode price ID (£40/month)
         "price": 40.00,
-        "interval": "month"
+        "interval": "month",
+        "features": {
+            "ai_coaching": True,
+            "fleet_replay": True,
+            "wind_analysis": True
+        }
     }
 }
 
@@ -146,18 +156,26 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
             print(f"[WEBHOOK] Period end timestamp: {period_end}", flush=True)
 
-            # Create subscription record - access as dictionary
+            # Get plan features
+            plan_features = PLANS.get(plan_id, {}).get("features", {})
+            print(f"[WEBHOOK] Plan features: {plan_features}", flush=True)
+
+            # Create subscription record with feature flags
             subscription = Subscription(
                 user_id=user_id,
                 stripe_subscription_id=stripe_subscription_id,
                 plan_id=plan_id,
                 status='active',
-                current_period_end=datetime.fromtimestamp(period_end)
+                current_period_end=datetime.fromtimestamp(period_end),
+                has_ai_coaching=plan_features.get("ai_coaching", False),
+                has_fleet_replay=plan_features.get("fleet_replay", False),
+                has_wind_analysis=plan_features.get("wind_analysis", False)
             )
             db.add(subscription)
             db.commit()
 
             print(f"[WEBHOOK] Subscription created successfully for user {user_id}", flush=True)
+            print(f"[WEBHOOK] Features enabled: AI Coaching={subscription.has_ai_coaching}, Fleet Replay={subscription.has_fleet_replay}, Wind Analysis={subscription.has_wind_analysis}", flush=True)
         except Exception as e:
             print(f"[WEBHOOK ERROR] Failed to create subscription: {str(e)}", flush=True)
             import traceback
@@ -190,7 +208,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if subscription:
             subscription.status = 'cancelled'
+            # Remove feature access when subscription is cancelled
+            subscription.has_ai_coaching = False
+            subscription.has_fleet_replay = False
+            subscription.has_wind_analysis = False
             db.commit()
+            print(f"[WEBHOOK] Subscription cancelled and features disabled for user {subscription.user_id}", flush=True)
 
     return {"status": "success"}
 
