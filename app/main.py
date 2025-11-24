@@ -101,7 +101,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Local development
         "http://localhost:3000",  # Alternative local port
-        "https://racepilot-dashboard.vercel.app",  # Production
+        "https://racepilot-dashboard-production.up.railway.app",  # Production Railway
+        "https://racepilot-dashboard.vercel.app",  # Production Vercel (backup)
         "https://racepilot-dashboard-k8upa8p5h-kevins-projects-5141f84d.vercel.app",  # Preview
         "https://*.vercel.app",  # All Vercel preview deployments
         "*"  # Mobile app support (consider restricting this later)
