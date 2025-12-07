@@ -424,5 +424,14 @@ class Subscription(Base):
     has_fleet_replay = Column(Boolean, default=False)
     has_wind_analysis = Column(Boolean, default=False)
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    token = Column(String, unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    used_at = Column(DateTime, nullable=True)  # Track if token was used
+
 def init_db():
     Base.metadata.create_all(bind=engine)

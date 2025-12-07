@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, validator
 import re
 
-from app.db.models import User, Club, Boat
+from app.db.models import User, Club, Boat, PasswordResetToken
 from app.auth import (
     get_db,
     get_current_user,
@@ -20,6 +20,8 @@ from app.auth import (
     Token,
     can_edit_user,
 )
+from app.email_service import send_password_reset_email
+import secrets
 
 router = APIRouter()
 
@@ -466,3 +468,126 @@ def delete_boat(
     db.commit()
 
     return None
+
+
+# Password reset endpoints
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @validator('new_password')
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        return v
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset email.
+
+    Generates a secure token and sends an email with reset link.
+    Token expires in 1 hour.
+    """
+    # Find user by email
+    user = db.query(User).filter(User.email == request.email.lower()).first()
+
+    # Always return success message to prevent email enumeration
+    if not user:
+        return {
+            "message": "If that email address is registered, a password reset link has been sent."
+        }
+
+    # Generate secure random token
+    reset_token = secrets.token_urlsafe(32)
+
+    # Delete any existing reset tokens for this user
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id
+    ).delete()
+
+    # Create new reset token (expires in 1 hour)
+    token_record = PasswordResetToken(
+        user_id=user.id,
+        token=reset_token,
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+        created_at=datetime.utcnow()
+    )
+
+    db.add(token_record)
+    db.commit()
+
+    # Send password reset email
+    try:
+        await send_password_reset_email(user.email, reset_token)
+    except Exception as e:
+        print(f"Failed to send password reset email: {e}")
+        # Don't raise error - still return success to prevent enumeration
+
+    return {
+        "message": "If that email address is registered, a password reset link has been sent."
+    }
+
+
+@router.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password using a valid token.
+
+    Token must not be expired or previously used.
+    """
+    # Find token record
+    token_record = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token == request.token
+    ).first()
+
+    if not token_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Check if token is expired
+    if datetime.utcnow() > token_record.expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new one."
+        )
+
+    # Check if token was already used
+    if token_record.used_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has already been used. Please request a new one."
+        )
+
+    # Get user
+    user = db.query(User).filter(User.id == token_record.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Update password
+    user.password_hash = hash_password(request.new_password)
+
+    # Mark token as used
+    token_record.used_at = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "message": "Password has been reset successfully. You can now login with your new password."
+    }
