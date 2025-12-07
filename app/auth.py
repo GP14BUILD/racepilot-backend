@@ -390,9 +390,14 @@ def check_session_limit(user: User, db: Session):
     """
     Check if user has exceeded their monthly session limit.
     Raises HTTPException if limit exceeded.
+
+    NOTE: Session limits temporarily disabled for development/testing
     """
     from app.db.models import Session as DbSession
     from datetime import datetime, timedelta
+
+    # TEMPORARY: Bypass session limit during development
+    return
 
     features = get_user_subscription_features(user, db)
 
