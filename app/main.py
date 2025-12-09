@@ -93,7 +93,7 @@ except Exception as e:
     payments = None
     PAYMENTS_AVAILABLE = False
 
-app = FastAPI(title="RacePilot API", version="0.1.0")
+app = FastAPI(title="RacePilot API", version="0.1.1")
 
 # Enable CORS for dashboard and mobile app
 app.add_middleware(
@@ -120,7 +120,7 @@ def on_startup():
 def root():
     return {
         "message": "RacePilot API is running",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "status": "healthy"
     }
 
