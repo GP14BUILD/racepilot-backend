@@ -30,67 +30,76 @@ def create_session(
     return {"id": s.id}
 
 @router.get("")
-def list_sessions():
-    """Get all sessions"""
-    db = SessionLocal()
-    try:
-        sessions = db.query(S).order_by(S.start_ts.desc()).all()
-        return [{
-            "id": s.id,
-            "user_id": s.user_id,
-            "boat_id": s.boat_id,
-            "title": s.title,
-            "start_ts": s.start_ts,
-            "end_ts": s.end_ts,
-            "created_at": s.start_ts
-        } for s in sessions]
-    finally:
-        db.close()
+def list_sessions(
+    current_user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db)
+):
+    """Get all sessions for the current user"""
+    sessions = db.query(S).filter(S.user_id == current_user.id).order_by(S.start_ts.desc()).all()
+    return [{
+        "id": s.id,
+        "user_id": s.user_id,
+        "boat_id": s.boat_id,
+        "title": s.title,
+        "start_ts": s.start_ts,
+        "end_ts": s.end_ts,
+        "created_at": s.start_ts
+    } for s in sessions]
 
 @router.get("/{session_id}")
-def get_session(session_id: int):
-    db = SessionLocal()
-    try:
-        s = db.get(S, session_id)
-        if not s: return {"error": "not found"}
-        return {"id": s.id, "user_id": s.user_id, "boat_id": s.boat_id, "title": s.title, "start_ts": s.start_ts, "end_ts": s.end_ts, "created_at": s.start_ts}
-    finally:
-        db.close()
+def get_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db)
+):
+    s = db.get(S, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Verify the session belongs to the current user
+    if s.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this session")
+
+    return {"id": s.id, "user_id": s.user_id, "boat_id": s.boat_id, "title": s.title, "start_ts": s.start_ts, "end_ts": s.end_ts, "created_at": s.start_ts}
 
 @router.get("/{session_id}/points")
-def get_session_points(session_id: int):
+def get_session_points(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db)
+):
     """Get all track points for a session"""
-    db = SessionLocal()
-    try:
-        # Verify session exists
-        session = db.get(S, session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
+    # Verify session exists
+    session = db.get(S, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-        # Get all track points for this session
-        points = (
-            db.query(TrackPoint)
-            .filter(TrackPoint.session_id == session_id)
-            .order_by(TrackPoint.ts.asc())
-            .all()
-        )
+    # Verify the session belongs to the current user
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this session")
 
-        if not points:
-            raise HTTPException(status_code=404, detail="No track points found for this session")
+    # Get all track points for this session
+    points = (
+        db.query(TrackPoint)
+        .filter(TrackPoint.session_id == session_id)
+        .order_by(TrackPoint.ts.asc())
+        .all()
+    )
 
-        return [{
-            "id": p.id,
-            "session_id": p.session_id,
-            "ts": p.ts,
-            "lat": p.lat,
-            "lon": p.lon,
-            "sog": p.sog,
-            "cog": p.cog,
-            "awa": p.awa,
-            "aws": p.aws,
-            "hdg": p.hdg,
-            "tws": p.tws,
-            "twa": p.twa,
-        } for p in points]
-    finally:
-        db.close()
+    if not points:
+        raise HTTPException(status_code=404, detail="No track points found for this session")
+
+    return [{
+        "id": p.id,
+        "session_id": p.session_id,
+        "ts": p.ts,
+        "lat": p.lat,
+        "lon": p.lon,
+        "sog": p.sog,
+        "cog": p.cog,
+        "awa": p.awa,
+        "aws": p.aws,
+        "hdg": p.hdg,
+        "tws": p.tws,
+        "twa": p.twa,
+    } for p in points]
