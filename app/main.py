@@ -186,6 +186,102 @@ def create_test_club():
     finally:
         db.close()
 
+
+@app.post("/setup-admin")
+def setup_admin():
+    """
+    Create admin user for RacePilot.
+
+    Creates Kevin Donnelly as admin user with predefined credentials.
+    This is a one-time setup endpoint.
+    """
+    from .db.models import SessionLocal, User, Club
+    from .auth import hash_password
+    from datetime import datetime
+
+    db = SessionLocal()
+    try:
+        # Check if admin already exists
+        existing_user = db.query(User).filter(User.email == "kevindonnelly@race-pilot.app").first()
+
+        if existing_user:
+            # Update role to admin if not already
+            if existing_user.role != "admin":
+                existing_user.role = "admin"
+                db.commit()
+                return {
+                    "success": True,
+                    "message": "Existing user promoted to admin",
+                    "user": {
+                        "email": existing_user.email,
+                        "name": existing_user.name,
+                        "role": existing_user.role,
+                        "club_id": existing_user.club_id
+                    }
+                }
+            else:
+                return {
+                    "success": True,
+                    "message": "Admin user already exists",
+                    "user": {
+                        "email": existing_user.email,
+                        "name": existing_user.name,
+                        "role": existing_user.role,
+                        "club_id": existing_user.club_id
+                    }
+                }
+
+        # Find first club (or create one if none exist)
+        club = db.query(Club).first()
+        if not club:
+            # Create a default club if none exists
+            club = Club(
+                name="CLUB Sailing Club",
+                code="CLUB",
+                subscription_tier="pro",
+                is_active=True
+            )
+            db.add(club)
+            db.commit()
+            db.refresh(club)
+
+        # Create admin user
+        admin_user = User(
+            email="kevindonnelly@race-pilot.app",
+            name="Kevin Donnelly",
+            password_hash=hash_password("worldwide123"),
+            club_id=club.id,
+            role="admin",
+            is_active=True,
+            created_at=datetime.utcnow()
+        )
+
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+
+        return {
+            "success": True,
+            "message": "Admin user created successfully",
+            "user": {
+                "email": admin_user.email,
+                "name": admin_user.name,
+                "role": admin_user.role,
+                "club_id": admin_user.club_id,
+                "club_name": club.name
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        db.close()
+
+
 # Include routers that loaded successfully
 if AUTH_AVAILABLE and auth:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
