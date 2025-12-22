@@ -19,9 +19,11 @@ from app.auth import (
     hash_password,
     Token,
     can_edit_user,
+    require_role,
 )
-from app.email_service import send_password_reset_email
+from app.email_service import send_password_reset_email, send_welcome_email
 import secrets
+import asyncio
 
 router = APIRouter()
 
@@ -109,12 +111,12 @@ class BoatResponse(BaseModel):
 
 # Endpoints
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
-def register(request: RegisterRequest, db: Session = Depends(get_db)):
+async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """
     Register a new user.
 
     Requires a valid club code. Creates a new user account with hashed password.
-    Returns an access token for immediate login.
+    Sends welcome email and returns an access token for immediate login.
     """
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == request.email).first()
@@ -171,6 +173,17 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
             "role": new_user.role
         }
     )
+
+    # Send welcome email (non-blocking)
+    try:
+        await send_welcome_email(
+            email=new_user.email,
+            name=new_user.name,
+            club_name=club.name
+        )
+    except Exception as e:
+        # Log the error but don't fail registration
+        print(f"Failed to send welcome email to {new_user.email}: {e}")
 
     return {
         "message": "Registration successful",
@@ -591,3 +604,55 @@ def reset_password(
     return {
         "message": "Password has been reset successfully. You can now login with your new password."
     }
+
+
+# Admin endpoints
+class AdminUserResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    club_id: Optional[int]
+    club_name: Optional[str] = None
+    role: str
+    sail_number: Optional[str]
+    created_at: datetime
+    last_login: Optional[datetime]
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/admin/users", response_model=List[AdminUserResponse])
+def get_all_users(
+    current_user: User = Depends(require_role("admin", "club_admin")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all users (admin only).
+
+    Admin can see all users in their club.
+    Super admin (if implemented) could see all users across all clubs.
+    """
+    # For now, admins can only see users in their own club
+    users = db.query(User).filter(
+        User.club_id == current_user.club_id
+    ).order_by(User.created_at.desc()).all()
+
+    result = []
+    for user in users:
+        club = db.query(Club).filter(Club.id == user.club_id).first()
+        result.append(AdminUserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            club_id=user.club_id,
+            club_name=club.name if club else None,
+            role=user.role,
+            sail_number=user.sail_number,
+            created_at=user.created_at,
+            last_login=user.last_login,
+            is_active=user.is_active
+        ))
+
+    return result
