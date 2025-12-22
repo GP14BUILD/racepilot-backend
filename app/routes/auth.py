@@ -656,3 +656,45 @@ def get_all_users(
         ))
 
     return result
+
+
+@router.post("/promote-kevin-to-admin")
+def promote_kevin_to_admin(db: Session = Depends(get_db)):
+    """
+    One-time setup endpoint to promote kevindonnelly@race-pilot.app to admin.
+    This endpoint can be called once to grant admin access.
+    """
+    user = db.query(User).filter(User.email == "kevindonnelly@race-pilot.app").first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User kevindonnelly@race-pilot.app not found. Please register first."
+        )
+
+    if user.role == "admin":
+        return {
+            "success": True,
+            "message": "User is already an admin",
+            "user": {
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "club_id": user.club_id
+            }
+        }
+
+    # Promote to admin
+    user.role = "admin"
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "User promoted to admin successfully",
+        "user": {
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "club_id": user.club_id
+        }
+    }
