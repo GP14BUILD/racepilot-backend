@@ -698,3 +698,128 @@ def promote_kevin_to_admin(db: Session = Depends(get_db)):
             "club_id": user.club_id
         }
     }
+
+
+# Super Admin Endpoints - Only accessible to role='admin'
+
+@router.get("/admin/super/users", response_model=List[AdminUserResponse])
+def get_all_users_super_admin(
+    current_user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get ALL users across ALL clubs (super admin only).
+
+    Only accessible to users with role='admin' (not 'club_admin').
+    Returns all users in the system with their club information.
+    """
+    users = db.query(User).order_by(User.created_at.desc()).all()
+
+    result = []
+    for user in users:
+        club = db.query(Club).filter(Club.id == user.club_id).first()
+        result.append(AdminUserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            club_id=user.club_id,
+            club_name=club.name if club else None,
+            role=user.role,
+            sail_number=user.sail_number,
+            created_at=user.created_at,
+            last_login=user.last_login,
+            is_active=user.is_active
+        ))
+
+    return result
+
+
+class UpdateUserRoleRequest(BaseModel):
+    role: str
+
+    @validator('role')
+    def valid_role(cls, v):
+        if v not in ['sailor', 'coach', 'club_admin', 'admin']:
+            raise ValueError('Role must be sailor, coach, club_admin, or admin')
+        return v
+
+
+@router.put("/admin/super/users/{user_id}/role")
+def update_user_role(
+    user_id: int,
+    request: UpdateUserRoleRequest,
+    current_user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a user's role (super admin only).
+
+    Only accessible to users with role='admin'.
+    Allows changing any user's role.
+    """
+    target_user = db.query(User).filter(User.id == user_id).first()
+
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    old_role = target_user.role
+    target_user.role = request.role
+    db.commit()
+    db.refresh(target_user)
+
+    return {
+        "success": True,
+        "message": f"User role updated from {old_role} to {request.role}",
+        "user": {
+            "id": target_user.id,
+            "email": target_user.email,
+            "name": target_user.name,
+            "role": target_user.role,
+            "club_id": target_user.club_id
+        }
+    }
+
+
+class ClubSummaryResponse(BaseModel):
+    id: int
+    name: str
+    code: str
+    subscription_tier: str
+    is_active: bool
+    user_count: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/admin/super/clubs", response_model=List[ClubSummaryResponse])
+def get_all_clubs_super_admin(
+    current_user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all clubs with user counts (super admin only).
+
+    Only accessible to users with role='admin'.
+    Returns all clubs in the system with member counts.
+    """
+    clubs = db.query(Club).order_by(Club.created_at.desc()).all()
+
+    result = []
+    for club in clubs:
+        user_count = db.query(User).filter(User.club_id == club.id).count()
+        result.append(ClubSummaryResponse(
+            id=club.id,
+            name=club.name,
+            code=club.code,
+            subscription_tier=club.subscription_tier,
+            is_active=club.is_active,
+            user_count=user_count,
+            created_at=club.created_at
+        ))
+
+    return result
