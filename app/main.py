@@ -419,6 +419,25 @@ def restore_database(backup_data: dict):
         db.close()
 
 
+@app.get("/check-email-config")
+def check_email_config():
+    """
+    Check email configuration status.
+    Returns whether RESEND_API_KEY is configured (without exposing the key).
+    """
+    import os
+
+    resend_key = os.getenv("RESEND_API_KEY", "")
+    from_email = os.getenv("FROM_EMAIL", "RacePilot <info@race-pilot.app>")
+
+    return {
+        "resend_api_key_configured": bool(resend_key),
+        "resend_api_key_length": len(resend_key) if resend_key else 0,
+        "from_email": from_email,
+        "status": "ready" if resend_key else "missing_api_key"
+    }
+
+
 # Include routers that loaded successfully
 if AUTH_AVAILABLE and auth:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
