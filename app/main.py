@@ -116,6 +116,29 @@ app.add_middleware(
 def on_startup():
     init_db()
 
+    # Add session_number column if it doesn't exist (migration)
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            # Check if column exists
+            result = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='sessions' AND column_name='session_number'
+            """))
+
+            if result.fetchone() is None:
+                # Column doesn't exist, add it
+                print("Adding session_number column to sessions table...")
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN session_number INTEGER"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sessions_session_number ON sessions(session_number)"))
+                conn.commit()
+                print("✅ session_number column added successfully")
+            else:
+                print("session_number column already exists")
+    except Exception as e:
+        print(f"Migration check error (might be using SQLite): {e}")
+
 @app.get("/")
 def root():
     return {
