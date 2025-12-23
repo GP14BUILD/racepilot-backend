@@ -1,16 +1,11 @@
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
 from typing import Optional
+import httpx
 
 # Email configuration from environment variables
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "RacePilot <noreply@race-pilot.app>")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://race-pilot.app")
 
 async def send_email(
     to_email: str,
@@ -19,56 +14,55 @@ async def send_email(
     text_content: Optional[str] = None
 ):
     """
-    Send an email using SMTP.
+    Send an email using Resend API.
 
-    For production: Set environment variables:
-    - SMTP_HOST: SMTP server (e.g., smtp.gmail.com)
-    - SMTP_PORT: SMTP port (587 for TLS)
-    - SMTP_USER: Email username
-    - SMTP_PASSWORD: Email password or app password
-    - FROM_EMAIL: Sender email address
+    For production: Set environment variable:
+    - RESEND_API_KEY: Your Resend API key (get from https://resend.com)
+    - FROM_EMAIL: Sender email (default: RacePilot <noreply@race-pilot.app>)
     """
 
-    # If no SMTP credentials, log the email instead of sending
-    if not SMTP_USER or not SMTP_PASSWORD:
+    # If no Resend API key, log the email instead of sending
+    if not RESEND_API_KEY:
         print(f"""
-        ========== EMAIL (NOT SENT - NO SMTP CONFIG) ==========
+        ========== EMAIL (NOT SENT - NO RESEND API KEY) ==========
         To: {to_email}
         Subject: {subject}
 
         {text_content or html_content}
-        ========================================================
+        ===========================================================
         """)
         return
 
-    # Create message
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = FROM_EMAIL
-    message["To"] = to_email
-
-    # Add text and HTML parts
-    if text_content:
-        part1 = MIMEText(text_content, "plain")
-        message.attach(part1)
-
-    part2 = MIMEText(html_content, "html")
-    message.attach(part2)
-
-    # Send email
+    # Send email via Resend API
     try:
-        await aiosmtplib.send(
-            message,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USER,
-            password=SMTP_PASSWORD,
-            start_tls=True,
-        )
-        print(f"Email sent successfully to {to_email}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": FROM_EMAIL,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_content,
+                    "text": text_content or html_content,
+                },
+                timeout=10.0
+            )
+
+            if response.status_code != 200:
+                error_detail = response.text
+                print(f"Failed to send email to {to_email}: {error_detail}")
+                raise Exception(f"Resend API error: {error_detail}")
+
+            print(f"✅ Email sent successfully to {to_email}")
+            return response.json()
     except Exception as e:
-        print(f"Failed to send email to {to_email}: {e}")
-        raise
+        print(f"❌ Failed to send email to {to_email}: {e}")
+        # Don't raise - we don't want email failures to break registration
+        return None
 
 
 async def send_welcome_email(email: str, name: str, club_name: str):
