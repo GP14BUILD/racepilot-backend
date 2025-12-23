@@ -280,6 +280,7 @@ def backup_database():
     that can be restored later if database is reset.
     """
     from .db.models import SessionLocal, User, Club
+    from datetime import datetime
 
     db = SessionLocal()
     try:
