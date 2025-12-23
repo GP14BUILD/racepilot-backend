@@ -438,6 +438,41 @@ def check_email_config():
     }
 
 
+@app.get("/check-database-config")
+def check_database_config():
+    """
+    Check database configuration.
+    Returns database type and connection info without exposing sensitive data.
+    """
+    import os
+
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./racepilot.db")
+
+    # Determine database type
+    if database_url.startswith("postgresql"):
+        db_type = "postgresql"
+        # Extract host without password
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(database_url)
+            host_info = f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
+        except:
+            host_info = "unknown"
+    elif database_url.startswith("sqlite"):
+        db_type = "sqlite"
+        host_info = database_url.replace("sqlite:///", "")
+    else:
+        db_type = "unknown"
+        host_info = "unknown"
+
+    return {
+        "database_type": db_type,
+        "database_host": host_info,
+        "is_persistent": db_type == "postgresql",
+        "warning": "SQLite data will be lost on redeploy!" if db_type == "sqlite" else None
+    }
+
+
 # Include routers that loaded successfully
 if AUTH_AVAILABLE and auth:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
