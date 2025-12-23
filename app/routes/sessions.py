@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session as DbSession
-from ..db.models import SessionLocal, Session as S, TrackPoint, User
+from ..db.models import SessionLocal, Session as S, TrackPoint, User, Boat
 from ..schemas import SessionCreate
 from ..auth import get_current_user, get_db, check_session_limit
 from datetime import datetime
@@ -22,11 +22,18 @@ def create_session(
     # Check session limit for free users
     check_session_limit(current_user, db)
 
+    # Validate boat_id exists if provided
+    validated_boat_id = None
+    if req.boat_id:
+        boat = db.query(Boat).filter(Boat.id == req.boat_id, Boat.user_id == current_user.id).first()
+        if boat:
+            validated_boat_id = boat.id
+
     # Create session with authenticated user's ID
     s = S(
         user_id=current_user.id,
         club_id=current_user.club_id,
-        boat_id=req.boat_id,
+        boat_id=validated_boat_id,
         title=req.title,
         start_ts=req.start_ts,
         created_at=datetime.utcnow()
