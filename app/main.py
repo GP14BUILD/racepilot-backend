@@ -271,6 +271,153 @@ def setup_admin():
         db.close()
 
 
+@app.get("/backup-database")
+def backup_database():
+    """
+    Backup all database tables to JSON.
+
+    Returns all users, clubs, sessions, and other data in JSON format
+    that can be restored later if database is reset.
+    """
+    from .db.models import SessionLocal, User, Club
+
+    db = SessionLocal()
+    try:
+        # Get all clubs
+        clubs = db.query(Club).all()
+        clubs_data = [
+            {
+                "id": club.id,
+                "name": club.name,
+                "code": club.code,
+                "subscription_tier": club.subscription_tier,
+                "is_active": club.is_active,
+                "privacy_level": club.privacy_level,
+                "share_to_global": club.share_to_global,
+                "allow_anonymous_sharing": club.allow_anonymous_sharing,
+                "description": club.description,
+                "location": club.location,
+                "website": club.website,
+                "created_at": club.created_at.isoformat() if club.created_at else None
+            }
+            for club in clubs
+        ]
+
+        # Get all users (excluding password hashes for security)
+        users = db.query(User).all()
+        users_data = [
+            {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "club_id": user.club_id,
+                "role": user.role,
+                "sail_number": user.sail_number,
+                "is_active": user.is_active,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "last_login": user.last_login.isoformat() if user.last_login else None
+            }
+            for user in users
+        ]
+
+        return {
+            "success": True,
+            "backup_date": datetime.utcnow().isoformat(),
+            "counts": {
+                "clubs": len(clubs_data),
+                "users": len(users_data)
+            },
+            "data": {
+                "clubs": clubs_data,
+                "users": users_data
+            }
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        db.close()
+
+
+@app.post("/restore-database")
+def restore_database(backup_data: dict):
+    """
+    Restore database from backup JSON.
+
+    WARNING: This will clear existing data and restore from backup.
+    Only use this after setting up PostgreSQL.
+    """
+    from .db.models import SessionLocal, User, Club
+    from .auth import hash_password
+
+    db = SessionLocal()
+    try:
+        data = backup_data.get("data", {})
+
+        # Restore clubs
+        clubs_restored = 0
+        for club_data in data.get("clubs", []):
+            existing = db.query(Club).filter(Club.code == club_data["code"]).first()
+            if not existing:
+                club = Club(
+                    name=club_data["name"],
+                    code=club_data["code"],
+                    subscription_tier=club_data.get("subscription_tier", "free"),
+                    is_active=club_data.get("is_active", True),
+                    privacy_level=club_data.get("privacy_level", "club_only"),
+                    share_to_global=club_data.get("share_to_global", False),
+                    allow_anonymous_sharing=club_data.get("allow_anonymous_sharing", True),
+                    description=club_data.get("description"),
+                    location=club_data.get("location"),
+                    website=club_data.get("website")
+                )
+                db.add(club)
+                clubs_restored += 1
+
+        db.commit()
+
+        # Restore users (with default password that must be reset)
+        users_restored = 0
+        for user_data in data.get("users", []):
+            existing = db.query(User).filter(User.email == user_data["email"]).first()
+            if not existing:
+                user = User(
+                    email=user_data["email"],
+                    name=user_data["name"],
+                    password_hash=hash_password("resetme123"),  # Default password
+                    club_id=user_data.get("club_id"),
+                    role=user_data.get("role", "sailor"),
+                    sail_number=user_data.get("sail_number"),
+                    is_active=user_data.get("is_active", True)
+                )
+                db.add(user)
+                users_restored += 1
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Database restored from backup",
+            "restored": {
+                "clubs": clubs_restored,
+                "users": users_restored
+            },
+            "note": "All restored users have password 'resetme123' - they should reset via forgot password"
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        db.close()
+
+
 # Include routers that loaded successfully
 if AUTH_AVAILABLE and auth:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
