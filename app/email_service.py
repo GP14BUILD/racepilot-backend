@@ -4,7 +4,7 @@ import httpx
 
 # Email configuration from environment variables
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "RacePilot <noreply@race-pilot.app>")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "RacePilot <info@race-pilot.app>")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://race-pilot.app")
 
 async def send_email(
