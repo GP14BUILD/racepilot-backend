@@ -8,8 +8,7 @@ class RegisterRequest(BaseModel):
     password: str
 
 class SessionCreate(BaseModel):
-    user_id: int
-    boat_id: int
+    boat_id: Optional[int] = None
     title: str
     start_ts: datetime
 

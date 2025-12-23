@@ -22,12 +22,19 @@ def create_session(
     # Check session limit for free users
     check_session_limit(current_user, db)
 
-    # Create session
-    s = S(user_id=req.user_id, boat_id=req.boat_id, title=req.title, start_ts=req.start_ts)
+    # Create session with authenticated user's ID
+    s = S(
+        user_id=current_user.id,
+        club_id=current_user.club_id,
+        boat_id=req.boat_id,
+        title=req.title,
+        start_ts=req.start_ts,
+        created_at=datetime.utcnow()
+    )
     db.add(s)
     db.commit()
     db.refresh(s)
-    return {"id": s.id}
+    return {"id": s.id, "session_id": s.id}
 
 @router.get("")
 def list_sessions(
