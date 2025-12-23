@@ -205,31 +205,20 @@ def setup_admin():
         existing_user = db.query(User).filter(User.email == "kevindonnelly@race-pilot.app").first()
 
         if existing_user:
-            # Update role to admin if not already
-            if existing_user.role != "admin":
-                existing_user.role = "admin"
-                db.commit()
-                return {
-                    "success": True,
-                    "message": "Existing user promoted to admin",
-                    "user": {
-                        "email": existing_user.email,
-                        "name": existing_user.name,
-                        "role": existing_user.role,
-                        "club_id": existing_user.club_id
-                    }
+            # Update role to admin and reset password
+            existing_user.role = "admin"
+            existing_user.password_hash = hash_password("worldwide123")
+            db.commit()
+            return {
+                "success": True,
+                "message": "Admin user updated (role: admin, password: worldwide123)",
+                "user": {
+                    "email": existing_user.email,
+                    "name": existing_user.name,
+                    "role": existing_user.role,
+                    "club_id": existing_user.club_id
                 }
-            else:
-                return {
-                    "success": True,
-                    "message": "Admin user already exists",
-                    "user": {
-                        "email": existing_user.email,
-                        "name": existing_user.name,
-                        "role": existing_user.role,
-                        "club_id": existing_user.club_id
-                    }
-                }
+            }
 
         # Find first club (or create one if none exist)
         club = db.query(Club).first()
