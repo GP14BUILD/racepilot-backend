@@ -36,8 +36,7 @@ def create_session(
             club_id=current_user.club_id,
             boat_id=validated_boat_id,
             title=req.title,
-            start_ts=req.start_ts,
-            created_at=datetime.utcnow()
+            start_ts=req.start_ts
         )
         db.add(s)
         db.commit()
