@@ -497,10 +497,12 @@ def check_database_config():
 
 
 @app.post("/migrate-session-numbers")
-def migrate_session_numbers():
+def migrate_session_numbers(reset_all: bool = False):
     """
     Migration endpoint to populate session_number for existing sessions.
     This assigns sequential numbers (1, 2, 3...) to each user's sessions.
+
+    Use ?reset_all=true to reassign ALL session numbers (fixes duplicates).
     """
     from .db.models import Session, SessionLocal
     db = SessionLocal()
@@ -512,7 +514,8 @@ def migrate_session_numbers():
         updated_count = 0
 
         for session in sessions:
-            if session.session_number is None:
+            # Update if NULL or if reset_all is True
+            if session.session_number is None or reset_all:
                 # Get or initialize counter for this user
                 if session.user_id not in user_counters:
                     user_counters[session.user_id] = 1
@@ -525,7 +528,8 @@ def migrate_session_numbers():
         return {
             "success": True,
             "updated_sessions": updated_count,
-            "message": f"Migrated {updated_count} sessions with session numbers"
+            "message": f"Migrated {updated_count} sessions with session numbers",
+            "reset_all": reset_all
         }
     except Exception as e:
         db.rollback()
