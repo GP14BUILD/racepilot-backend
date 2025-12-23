@@ -30,18 +30,23 @@ def create_session(
             validated_boat_id = boat.id
 
     # Create session with authenticated user's ID
-    s = S(
-        user_id=current_user.id,
-        club_id=current_user.club_id,
-        boat_id=validated_boat_id,
-        title=req.title,
-        start_ts=req.start_ts,
-        created_at=datetime.utcnow()
-    )
-    db.add(s)
-    db.commit()
-    db.refresh(s)
-    return {"id": s.id, "session_id": s.id}
+    try:
+        s = S(
+            user_id=current_user.id,
+            club_id=current_user.club_id,
+            boat_id=validated_boat_id,
+            title=req.title,
+            start_ts=req.start_ts,
+            created_at=datetime.utcnow()
+        )
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+        return {"id": s.id, "session_id": s.id}
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Session creation error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
 @router.get("")
 def list_sessions(
