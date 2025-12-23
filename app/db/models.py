@@ -59,6 +59,7 @@ class Session(Base):
     __tablename__ = "sessions"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    session_number = Column(Integer, index=True)  # User-specific session number (1, 2, 3...)
     boat_id = Column(Integer, ForeignKey("boats.id"))
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
     title = Column(String)

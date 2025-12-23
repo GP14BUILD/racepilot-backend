@@ -473,6 +473,47 @@ def check_database_config():
     }
 
 
+@app.post("/migrate-session-numbers")
+def migrate_session_numbers():
+    """
+    Migration endpoint to populate session_number for existing sessions.
+    This assigns sequential numbers (1, 2, 3...) to each user's sessions.
+    """
+    from .db.models import Session, SessionLocal
+    db = SessionLocal()
+    try:
+        # Get all sessions ordered by user and start time
+        sessions = db.query(Session).order_by(Session.user_id, Session.start_ts).all()
+
+        user_counters = {}
+        updated_count = 0
+
+        for session in sessions:
+            if session.session_number is None:
+                # Get or initialize counter for this user
+                if session.user_id not in user_counters:
+                    user_counters[session.user_id] = 1
+
+                session.session_number = user_counters[session.user_id]
+                user_counters[session.user_id] += 1
+                updated_count += 1
+
+        db.commit()
+        return {
+            "success": True,
+            "updated_sessions": updated_count,
+            "message": f"Migrated {updated_count} sessions with session numbers"
+        }
+    except Exception as e:
+        db.rollback()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        db.close()
+
+
 # Include routers that loaded successfully
 if AUTH_AVAILABLE and auth:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
