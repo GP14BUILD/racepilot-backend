@@ -979,3 +979,48 @@ def get_all_clubs_super_admin(
         ))
 
     return result
+
+
+# Feedback endpoint
+
+class FeedbackRequest(BaseModel):
+    name: str
+    email: str
+    subject: str
+    message: str
+    category: str = "general"
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    request: FeedbackRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Submit user feedback, bug reports, or feature requests.
+
+    Anyone can submit feedback (authenticated or not).
+    Feedback is logged and can be sent via email to admins.
+    """
+    # Log the feedback
+    feedback_log = f"""
+    ========== NEW FEEDBACK ==========
+    From: {request.name} <{request.email}>
+    Category: {request.category}
+    Subject: {request.subject}
+
+    Message:
+    {request.message}
+
+    Timestamp: {datetime.utcnow().isoformat()}
+    ==================================
+    """
+    print(feedback_log)
+
+    # TODO: Optionally save to database or send email to admin
+    # For now, just log it
+
+    return {
+        "success": True,
+        "message": "Thank you for your feedback! We'll review it shortly."
+    }
