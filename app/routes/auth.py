@@ -24,8 +24,14 @@ from app.auth import (
 from app.email_service import send_password_reset_email, send_welcome_email
 import secrets
 import asyncio
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import os
 
 router = APIRouter()
+
+# Google OAuth configuration
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 
 # Pydantic models for requests/responses
@@ -246,6 +252,156 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         "access_token": access_token,
         "token_type": "bearer"
     }
+
+
+class GoogleSignInRequest(BaseModel):
+    credential: str
+    club_code: Optional[str] = None
+
+
+@router.post("/google-signin", response_model=dict)
+async def google_signin(request: GoogleSignInRequest, db: Session = Depends(get_db)):
+    """
+    Sign in or register with Google OAuth.
+
+    If user exists, log them in.
+    If user doesn't exist and club_code is provided, create account.
+    """
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Sign-In is not configured on the server"
+        )
+
+    try:
+        # Verify Google ID token
+        idinfo = id_token.verify_oauth2_token(
+            request.credential,
+            requests.Request(),
+            GOOGLE_CLIENT_ID
+        )
+
+        # Get user info from Google
+        google_email = idinfo.get('email')
+        google_name = idinfo.get('name')
+
+        if not google_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email not provided by Google"
+            )
+
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == google_email).first()
+
+        if existing_user:
+            # User exists - log them in
+            existing_user.last_login = datetime.utcnow()
+            db.commit()
+
+            club = db.query(Club).filter(Club.id == existing_user.club_id).first()
+
+            access_token = create_access_token(
+                data={
+                    "user_id": existing_user.id,
+                    "email": existing_user.email,
+                    "club_id": existing_user.club_id,
+                    "role": existing_user.role
+                }
+            )
+
+            return {
+                "message": "Login successful",
+                "user": {
+                    "id": existing_user.id,
+                    "email": existing_user.email,
+                    "name": existing_user.name,
+                    "club_id": existing_user.club_id,
+                    "club_name": club.name if club else None,
+                    "role": existing_user.role,
+                    "sail_number": existing_user.sail_number
+                },
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
+
+        else:
+            # User doesn't exist - need club_code to register
+            if not request.club_code:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Club code required for new registrations. Please use the registration form."
+                )
+
+            # Find club by code
+            club = db.query(Club).filter(Club.code == request.club_code.upper()).first()
+            if not club:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Club with code '{request.club_code}' not found"
+                )
+
+            # Create new user (no password for OAuth users)
+            new_user = User(
+                email=google_email,
+                name=google_name or google_email.split('@')[0],
+                password_hash="",  # No password for Google OAuth users
+                club_id=club.id,
+                role="sailor",
+                created_at=datetime.utcnow(),
+                last_login=datetime.utcnow()
+            )
+
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+
+            # Send welcome email (non-blocking)
+            try:
+                await send_welcome_email(
+                    email=new_user.email,
+                    name=new_user.name,
+                    club_name=club.name
+                )
+            except Exception as e:
+                print(f"Failed to send welcome email: {e}")
+
+            access_token = create_access_token(
+                data={
+                    "user_id": new_user.id,
+                    "email": new_user.email,
+                    "club_id": new_user.club_id,
+                    "role": new_user.role
+                }
+            )
+
+            return {
+                "message": "Registration successful",
+                "user": {
+                    "id": new_user.id,
+                    "email": new_user.email,
+                    "name": new_user.name,
+                    "club_id": new_user.club_id,
+                    "club_name": club.name,
+                    "role": new_user.role,
+                    "sail_number": new_user.sail_number
+                },
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
+
+    except ValueError as e:
+        # Invalid token
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Google credential: {str(e)}"
+        )
+    except Exception as e:
+        print(f"Google Sign-In error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to authenticate with Google"
+        )
 
 
 @router.get("/me", response_model=UserResponse)
