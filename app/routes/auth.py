@@ -390,6 +390,9 @@ async def google_signin(request: GoogleSignInRequest, db: Session = Depends(get_
                 "token_type": "bearer"
             }
 
+    except HTTPException:
+        # Re-raise HTTPException to let FastAPI handle it properly
+        raise
     except ValueError as e:
         # Invalid token
         raise HTTPException(
