@@ -45,15 +45,59 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
 
+class BoatClass(Base):
+    __tablename__ = "boat_classes"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, index=True, nullable=False)  # e.g., "GP14", "Wayfarer"
+    portsmouth_yardstick = Column(Float, nullable=True)  # PY rating
+
+    # Upwind defaults (degrees from true wind)
+    typical_upwind_angle_light = Column(Float, nullable=True)  # TWS 0-6kt
+    typical_upwind_angle_medium = Column(Float, nullable=True)  # TWS 6-12kt
+    typical_upwind_angle_fresh = Column(Float, nullable=True)  # TWS 12-18kt
+    typical_upwind_angle_strong = Column(Float, nullable=True)  # TWS 18-30kt
+
+    # Downwind defaults (degrees from true wind)
+    typical_downwind_angle_light = Column(Float, nullable=True)
+    typical_downwind_angle_medium = Column(Float, nullable=True)
+    typical_downwind_angle_fresh = Column(Float, nullable=True)
+    typical_downwind_angle_strong = Column(Float, nullable=True)
+
+    # VMG targets (knots)
+    typical_upwind_vmg_light = Column(Float, nullable=True)
+    typical_upwind_vmg_medium = Column(Float, nullable=True)
+    typical_upwind_vmg_fresh = Column(Float, nullable=True)
+    typical_upwind_vmg_strong = Column(Float, nullable=True)
+
+    typical_downwind_vmg_light = Column(Float, nullable=True)
+    typical_downwind_vmg_medium = Column(Float, nullable=True)
+    typical_downwind_vmg_fresh = Column(Float, nullable=True)
+    typical_downwind_vmg_strong = Column(Float, nullable=True)
+
+    # Hull characteristics
+    waterline_length_m = Column(Float, nullable=True)  # For hull speed calculation
+    hull_speed_max_kn = Column(Float, nullable=True)  # sqrt(waterline) * 1.34
+
+    # Metadata
+    description = Column(String, nullable=True)
+    is_custom = Column(Boolean, default=False)  # User-created vs. pre-populated
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class Boat(Base):
     __tablename__ = "boats"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     name = Column(String, nullable=True)
-    klass = Column(String, nullable=True)  # Boat class: "Laser", "420", "GP14", etc.
+    klass = Column(String, nullable=True)  # Boat class: "Laser", "420", "GP14", etc. (legacy)
     sail_number = Column(String, nullable=False)
+    boat_class_id = Column(Integer, ForeignKey("boat_classes.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_default = Column(Boolean, default=False)
+
+    # Relationship
+    boat_class = relationship("BoatClass", backref="boats")
 
 class Session(Base):
     __tablename__ = "sessions"

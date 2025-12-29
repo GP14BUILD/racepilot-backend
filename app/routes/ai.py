@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import math
 from sqlalchemy.orm import Session as DbSession
 
-from ..db.models import SessionLocal, TrackPoint, Maneuver, PerformanceBaseline, PerformanceAnomaly, Session, FleetComparison, Boat, VMGOptimization, CoachingRecommendation, WindShift, WindPattern, User
+from ..db.models import SessionLocal, TrackPoint, Maneuver, PerformanceBaseline, PerformanceAnomaly, Session, FleetComparison, Boat, BoatClass, VMGOptimization, CoachingRecommendation, WindShift, WindPattern, User
 from ..auth import require_subscription, get_current_user, get_db
 from sqlalchemy import and_
 from geopy.distance import geodesic
@@ -25,6 +25,18 @@ except ImportError:
     PolynomialFeatures = None
     r2_score = None
     ML_AVAILABLE = False
+
+# Anthropic Claude API for conversational coaching
+try:
+    import anthropic
+    import os
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    CLAUDE_AVAILABLE = bool(ANTHROPIC_API_KEY)
+    if CLAUDE_AVAILABLE:
+        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+except ImportError:
+    CLAUDE_AVAILABLE = False
+    claude_client = None
 
 router = APIRouter()
 
@@ -1186,33 +1198,78 @@ def get_optimal_vmg(boat_id: int, tws: float, upwind: bool = True):
         ).all()
 
         if not optimizations:
-            # Fall back to generic angles if no learned data
-            if upwind:
-                # Generic upwind angles based on wind speed
-                if tws < 8:
-                    angle = 45
-                elif tws < 12:
-                    angle = 42
-                elif tws < 18:
-                    angle = 38
-                else:
-                    angle = 35
-            else:
-                # Generic downwind angles
-                if tws < 8:
-                    angle = 150
-                elif tws < 12:
-                    angle = 145
-                else:
-                    angle = 140
+            # Try to use boat class defaults
+            boat = db.query(Boat).filter(Boat.id == boat_id).first()
+            boat_class = boat.boat_class if boat and boat.boat_class else None
 
-            return {
-                "boat_id": boat_id,
-                "tws": tws,
-                "optimal_angle": angle,
-                "learned": False,
-                "message": "Using generic polar - no learned data available. Run optimization to learn your boat's performance."
-            }
+            if boat_class:
+                # Use boat-specific defaults from boat class
+                if upwind:
+                    # Select angle based on wind speed range
+                    if tws < 6:
+                        angle = boat_class.typical_upwind_angle_light
+                        expected_vmg = boat_class.typical_upwind_vmg_light
+                    elif tws < 12:
+                        angle = boat_class.typical_upwind_angle_medium
+                        expected_vmg = boat_class.typical_upwind_vmg_medium
+                    elif tws < 18:
+                        angle = boat_class.typical_upwind_angle_fresh
+                        expected_vmg = boat_class.typical_upwind_vmg_fresh
+                    else:
+                        angle = boat_class.typical_upwind_angle_strong
+                        expected_vmg = boat_class.typical_upwind_vmg_strong
+                else:
+                    # Downwind angles
+                    if tws < 6:
+                        angle = boat_class.typical_downwind_angle_light
+                        expected_vmg = boat_class.typical_downwind_vmg_light
+                    elif tws < 12:
+                        angle = boat_class.typical_downwind_angle_medium
+                        expected_vmg = boat_class.typical_downwind_vmg_medium
+                    elif tws < 18:
+                        angle = boat_class.typical_downwind_angle_fresh
+                        expected_vmg = boat_class.typical_downwind_vmg_fresh
+                    else:
+                        angle = boat_class.typical_downwind_angle_strong
+                        expected_vmg = boat_class.typical_downwind_vmg_strong
+
+                return {
+                    "boat_id": boat_id,
+                    "tws": tws,
+                    "optimal_angle": round(angle, 1) if angle else 42 if upwind else 145,
+                    "expected_vmg": round(expected_vmg, 2) if expected_vmg else None,
+                    "learned": False,
+                    "boat_class": boat_class.name,
+                    "message": f"Using {boat_class.name} class defaults - no learned data yet. Continue sailing to build personalized performance data."
+                }
+            else:
+                # Fall back to generic dinghy angles if no boat class
+                if upwind:
+                    # Generic upwind angles based on wind speed
+                    if tws < 8:
+                        angle = 45
+                    elif tws < 12:
+                        angle = 42
+                    elif tws < 18:
+                        angle = 38
+                    else:
+                        angle = 35
+                else:
+                    # Generic downwind angles
+                    if tws < 8:
+                        angle = 150
+                    elif tws < 12:
+                        angle = 145
+                    else:
+                        angle = 140
+
+                return {
+                    "boat_id": boat_id,
+                    "tws": tws,
+                    "optimal_angle": angle,
+                    "learned": False,
+                    "message": "Using generic dinghy defaults - no boat class or learned data. Add a boat class for better coaching."
+                }
 
         opt = optimizations[0]
 
@@ -1320,6 +1377,11 @@ def analyze_and_recommend(
         if not boat_id:
             return {"error": "Session has no associated boat"}
 
+        # Get boat and boat class info for context
+        boat = db.query(Boat).filter(Boat.id == boat_id).first()
+        boat_class = boat.boat_class if boat and boat.boat_class else None
+        boat_class_name = boat_class.name if boat_class else None
+
         # Get recent track points (last 5 minutes for analysis)
         if current_time is None:
             # Get the most recent track point time
@@ -1383,10 +1445,11 @@ def analyze_and_recommend(
                     if angle_deviation > 0:
                         # Sailing too high (pinching)
                         priority = "high" if angle_deviation > 10 else "medium"
+                        boat_context = f" ({boat_class_name} optimal: {optimal_angle:.1f}° in {current_tws:.0f}kt wind)" if boat_class_name else ""
                         recommendations.append({
                             "type": "sail_lower",
                             "priority": priority,
-                            "text": f"Sail {abs(angle_deviation):.1f}° lower to optimal VMG angle. You're pinching and losing {vmg_loss:.2f} kts of VMG.",
+                            "text": f"Sail {abs(angle_deviation):.1f}° lower to optimal VMG angle{boat_context}. You're pinching and losing {vmg_loss:.2f} kts of VMG.",
                             "confidence": 85,
                             "reasoning": f"Current TWA: {current_twa:.1f}°, Optimal: {optimal_angle:.1f}°. Current VMG: {current_vmg:.2f} kts vs optimal {optimal_vmg:.2f} kts",
                             "context": {
@@ -1395,16 +1458,19 @@ def analyze_and_recommend(
                                 "angle_deviation": round(angle_deviation, 1),
                                 "current_vmg": round(current_vmg, 2),
                                 "optimal_vmg": round(optimal_vmg, 2),
-                                "vmg_loss": round(vmg_loss, 2)
+                                "vmg_loss": round(vmg_loss, 2),
+                                "boat_class": boat_class_name,
+                                "data_source": "GPS learned"
                             }
                         })
                     else:
                         # Sailing too low (footing)
                         priority = "high" if abs(angle_deviation) > 10 else "medium"
+                        boat_context = f" ({boat_class_name} optimal: {optimal_angle:.1f}° in {current_tws:.0f}kt wind)" if boat_class_name else ""
                         recommendations.append({
                             "type": "sail_higher",
                             "priority": priority,
-                            "text": f"Sail {abs(angle_deviation):.1f}° higher to optimal VMG angle. You're footing and losing {vmg_loss:.2f} kts of VMG.",
+                            "text": f"Sail {abs(angle_deviation):.1f}° higher to optimal VMG angle{boat_context}. You're footing and losing {vmg_loss:.2f} kts of VMG.",
                             "confidence": 85,
                             "reasoning": f"Current TWA: {current_twa:.1f}°, Optimal: {optimal_angle:.1f}°. Current VMG: {current_vmg:.2f} kts vs optimal {optimal_vmg:.2f} kts",
                             "context": {
@@ -1413,7 +1479,9 @@ def analyze_and_recommend(
                                 "angle_deviation": round(angle_deviation, 1),
                                 "current_vmg": round(current_vmg, 2),
                                 "optimal_vmg": round(optimal_vmg, 2),
-                                "vmg_loss": round(vmg_loss, 2)
+                                "vmg_loss": round(vmg_loss, 2),
+                                "boat_class": boat_class_name,
+                                "data_source": "GPS learned"
                             }
                         })
 
@@ -2091,5 +2159,288 @@ def get_wind_pattern(session_id: int):
             "wind_stability_score": round(pattern.wind_stability_score, 1)
         }
 
+    finally:
+        db.close()
+
+
+# ------------------------------
+# Conversational AI Race Coach
+# ------------------------------
+
+class ChatRequest(BaseModel):
+    session_id: int
+    question: str
+    conversation_history: Optional[List[Dict[str, str]]] = []
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    confidence: str
+    data_sources_used: List[str]
+
+
+@router.post("/chat/ask", response_model=ChatResponse)
+def ask_race_coach(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db)
+):
+    """
+    Conversational AI race coach powered by Claude.
+
+    Users can ask questions like:
+    - "Why was I slow on the second beat?"
+    - "How can I improve my downwind speed?"
+    - "What were the key moments in this race?"
+
+    The system analyzes session data and provides personalized coaching advice.
+    """
+    if not CLAUDE_AVAILABLE:
+        return {
+            "answer": "Conversational AI coaching is temporarily unavailable. Please check back later.",
+            "confidence": "N/A",
+            "data_sources_used": []
+        }
+
+    try:
+        session_id = request.session_id
+        user_question = request.question
+
+        # Verify session ownership
+        session = db.query(Session).filter(Session.id == session_id).first()
+        if not session:
+            return {
+                "answer": "Session not found. Please select a valid sailing session.",
+                "confidence": "N/A",
+                "data_sources_used": []
+            }
+
+        # Get boat information
+        boat = db.query(Boat).filter(Boat.id == session.boat_id).first()
+        boat_class = boat.boat_class if boat and boat.boat_class else None
+
+        # Fetch all relevant session data
+        track_points = db.query(TrackPoint).filter(
+            TrackPoint.session_id == session_id
+        ).order_by(TrackPoint.ts).limit(500).all()
+
+        maneuvers = db.query(Maneuver).filter(
+            Maneuver.session_id == session_id
+        ).all()
+
+        coaching_recs = db.query(CoachingRecommendation).filter(
+            CoachingRecommendation.session_id == session_id
+        ).order_by(CoachingRecommendation.ts).limit(50).all()
+
+        wind_shifts = db.query(WindShift).filter(
+            WindShift.session_id == session_id
+        ).all()
+
+        wind_pattern = db.query(WindPattern).filter(
+            WindPattern.session_id == session_id
+        ).first()
+
+        anomalies = db.query(PerformanceAnomaly).filter(
+            PerformanceAnomaly.session_id == session_id
+        ).limit(20).all()
+
+        # Build comprehensive context for Claude
+        data_sources_used = []
+
+        # Session metadata
+        session_context = f"""
+Session Information:
+- Session ID: {session_id}
+- Title: {session.title}
+- Start Time: {session.start_ts}
+- Duration: {(session.end_ts - session.start_ts).total_seconds() / 60:.1f} minutes (end: {session.end_ts})
+- Total Track Points: {len(track_points)}
+"""
+        data_sources_used.append("Session Metadata")
+
+        # Boat information
+        boat_context = ""
+        if boat:
+            boat_context += f"""
+Boat Information:
+- Boat: {boat.name or 'Unnamed'} (Sail #{boat.sail_number})
+"""
+            if boat_class:
+                boat_context += f"""- Class: {boat_class.name}
+- Portsmouth Yardstick: {boat_class.portsmouth_yardstick}
+- Typical Upwind Angle (medium wind): {boat_class.typical_upwind_angle_medium}°
+- Typical Downwind Angle (medium wind): {boat_class.typical_downwind_angle_medium}°
+- Hull Speed Max: {boat_class.hull_speed_max_kn:.1f} knots
+"""
+            data_sources_used.append("Boat Data")
+
+        # Track points summary
+        track_context = ""
+        if track_points:
+            avg_sog = sum(p.sog for p in track_points) / len(track_points)
+            max_sog = max(p.sog for p in track_points)
+            avg_tws = sum(p.tws for p in track_points if p.tws) / len([p for p in track_points if p.tws]) if any(p.tws for p in track_points) else None
+
+            track_context += f"""
+Performance Summary:
+- Average SOG: {avg_sog:.1f} knots
+- Max SOG: {max_sog:.1f} knots
+- Average TWS: {avg_tws:.1f} knots (true wind speed)
+- Track Points Analyzed: {len(track_points)}
+"""
+            data_sources_used.append("GPS Track Data")
+
+        # Maneuvers summary
+        maneuver_context = ""
+        if maneuvers:
+            tacks = [m for m in maneuvers if m.maneuver_type == 'tack']
+            gybes = [m for m in maneuvers if m.maneuver_type == 'gybe']
+
+            maneuver_context += f"""
+Maneuvers Detected:
+- Total Tacks: {len(tacks)}
+- Total Gybes: {len(gybes)}
+"""
+            if tacks:
+                avg_tack_score = sum(t.score_0_100 for t in tacks) / len(tacks)
+                avg_tack_time = sum(t.time_through_sec for t in tacks) / len(tacks)
+                best_tack = max(tacks, key=lambda x: x.score_0_100)
+                worst_tack = min(tacks, key=lambda x: x.score_0_100)
+
+                maneuver_context += f"""- Average Tack Score: {avg_tack_score:.0f}/100
+- Average Tack Time: {avg_tack_time:.1f} seconds
+- Best Tack: {best_tack.score_0_100:.0f}/100 at {best_tack.start_ts}
+- Worst Tack: {worst_tack.score_0_100:.0f}/100 at {worst_tack.start_ts}
+"""
+            data_sources_used.append("Maneuver Analysis")
+
+        # Coaching recommendations
+        coaching_context = ""
+        if coaching_recs:
+            critical_recs = [r for r in coaching_recs if r.priority == 'critical']
+            high_recs = [r for r in coaching_recs if r.priority == 'high']
+
+            coaching_context += f"""
+AI Coaching Recommendations:
+- Total Recommendations: {len(coaching_recs)}
+- Critical Priority: {len(critical_recs)}
+- High Priority: {len(high_recs)}
+
+Key Recommendations:
+"""
+            for rec in coaching_recs[:5]:  # Top 5
+                coaching_context += f"- [{rec.priority.upper()}] {rec.text} (Confidence: {rec.confidence}%, Time: {rec.ts})\n"
+
+            data_sources_used.append("AI Coaching Analysis")
+
+        # Wind analysis
+        wind_context = ""
+        if wind_shifts:
+            left_shifts = [w for w in wind_shifts if w.direction == 'left']
+            right_shifts = [w for w in wind_shifts if w.direction == 'right']
+
+            wind_context += f"""
+Wind Shift Analysis:
+- Total Shifts Detected: {len(wind_shifts)}
+- Left Shifts: {len(left_shifts)}
+- Right Shifts: {len(right_shifts)}
+"""
+            if wind_pattern:
+                wind_context += f"""- Dominant Pattern: {wind_pattern.dominant_pattern}
+- Pattern Strength: {wind_pattern.pattern_strength:.1f}/10
+- Oscillating: {'Yes' if wind_pattern.is_oscillating else 'No'}
+- Wind Stability Score: {wind_pattern.wind_stability_score:.1f}/10
+"""
+            data_sources_used.append("Wind Analysis")
+
+        # Performance anomalies
+        anomaly_context = ""
+        if anomalies:
+            severe_anomalies = [a for a in anomalies if a.severity == 'severe']
+            anomaly_context += f"""
+Performance Anomalies:
+- Total Anomalies: {len(anomalies)}
+- Severe Issues: {len(severe_anomalies)}
+
+Key Issues:
+"""
+            for anom in anomalies[:3]:  # Top 3
+                anomaly_context += f"- {anom.severity.upper()}: {anom.deviation_kts:.1f} knot deviation at {anom.ts} (expected {anom.expected_sog:.1f}kt, actual {anom.actual_sog:.1f}kt)\n"
+
+            data_sources_used.append("Performance Anomaly Detection")
+
+        # Construct Claude system prompt
+        system_prompt = """You are an expert sailing race coach analyzing GPS data from a dinghy sailing session.
+You have access to detailed telemetry including:
+- GPS track points with speed, heading, wind data
+- Maneuver analysis (tacks, gybes, scores)
+- AI-generated coaching recommendations
+- Wind shift detection and patterns
+- Performance anomaly detection
+- Boat class specifications
+
+Your role is to:
+1. Answer the sailor's question with specific, actionable advice
+2. Reference actual data points from their session (times, speeds, angles)
+3. Explain WHY something happened based on the data
+4. Provide concrete suggestions for improvement
+5. Use sailing terminology appropriately (VMG, TWA, TWS, SOG, etc.)
+
+Be conversational, encouraging, and specific. Avoid generic advice - use the actual data to illustrate your points."""
+
+        # Construct user message with all context
+        user_message = f"""{session_context}
+{boat_context}
+{track_context}
+{maneuver_context}
+{coaching_context}
+{wind_context}
+{anomaly_context}
+
+Sailor's Question: {user_question}
+
+Please analyze the session data above and provide a detailed, specific answer to the sailor's question."""
+
+        # Add conversation history if provided
+        messages = []
+        if request.conversation_history:
+            for msg in request.conversation_history[-10:]:  # Last 10 messages
+                messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", "")
+                })
+
+        # Add current question
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+
+        # Call Claude API
+        response = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1500,
+            system=system_prompt,
+            messages=messages
+        )
+
+        answer = response.content[0].text
+
+        # Determine confidence based on data availability
+        confidence_score = "High" if len(data_sources_used) >= 4 else "Medium" if len(data_sources_used) >= 2 else "Low"
+
+        return {
+            "answer": answer,
+            "confidence": confidence_score,
+            "data_sources_used": data_sources_used
+        }
+
+    except Exception as e:
+        print(f"Error in chat endpoint: {str(e)}")
+        return {
+            "answer": f"I encountered an error analyzing your session. Please try rephrasing your question or contact support if the issue persists. Error: {str(e)}",
+            "confidence": "N/A",
+            "data_sources_used": []
+        }
     finally:
         db.close()

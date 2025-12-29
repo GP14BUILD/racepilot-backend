@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, validator
 import re
 
-from app.db.models import User, Club, Boat, PasswordResetToken
+from app.db.models import User, Club, Boat, BoatClass, PasswordResetToken
 from app.auth import (
     get_db,
     get_current_user,
@@ -95,10 +95,21 @@ class UpdateProfileRequest(BaseModel):
         return v
 
 
+class BoatClassResponse(BaseModel):
+    id: int
+    name: str
+    portsmouth_yardstick: Optional[float]
+    is_custom: bool
+
+    class Config:
+        from_attributes = True
+
+
 class BoatRequest(BaseModel):
     name: Optional[str] = None
-    klass: Optional[str] = None
+    klass: Optional[str] = None  # Legacy field
     sail_number: str
+    boat_class_id: Optional[int] = None
     is_default: bool = False
 
 
@@ -108,8 +119,10 @@ class BoatResponse(BaseModel):
     name: Optional[str]
     klass: Optional[str]
     sail_number: str
+    boat_class_id: Optional[int]
     is_default: bool
     created_at: datetime
+    boat_class: Optional[BoatClassResponse] = None
 
     class Config:
         from_attributes = True
@@ -484,11 +497,18 @@ def create_boat(
     if request.is_default:
         db.query(Boat).filter(Boat.user_id == current_user.id).update({"is_default": False})
 
+    # Validate boat_class_id if provided
+    if request.boat_class_id:
+        boat_class = db.query(BoatClass).filter(BoatClass.id == request.boat_class_id).first()
+        if not boat_class:
+            raise HTTPException(status_code=400, detail="Invalid boat_class_id")
+
     new_boat = Boat(
         user_id=current_user.id,
         name=request.name,
         klass=request.klass,
         sail_number=request.sail_number,
+        boat_class_id=request.boat_class_id,
         is_default=request.is_default,
         created_at=datetime.utcnow()
     )
@@ -503,8 +523,15 @@ def create_boat(
         name=new_boat.name,
         klass=new_boat.klass,
         sail_number=new_boat.sail_number,
+        boat_class_id=new_boat.boat_class_id,
         is_default=new_boat.is_default,
-        created_at=new_boat.created_at
+        created_at=new_boat.created_at,
+        boat_class=BoatClassResponse(
+            id=new_boat.boat_class.id,
+            name=new_boat.boat_class.name,
+            portsmouth_yardstick=new_boat.boat_class.portsmouth_yardstick,
+            is_custom=new_boat.boat_class.is_custom
+        ) if new_boat.boat_class else None
     )
 
 
@@ -525,8 +552,15 @@ def get_my_boats(
             name=boat.name,
             klass=boat.klass,
             sail_number=boat.sail_number,
+            boat_class_id=boat.boat_class_id,
             is_default=boat.is_default,
-            created_at=boat.created_at
+            created_at=boat.created_at,
+            boat_class=BoatClassResponse(
+                id=boat.boat_class.id,
+                name=boat.boat_class.name,
+                portsmouth_yardstick=boat.boat_class.portsmouth_yardstick,
+                is_custom=boat.boat_class.is_custom
+            ) if boat.boat_class else None
         )
         for boat in boats
     ]
@@ -560,8 +594,15 @@ def get_boat(
         name=boat.name,
         klass=boat.klass,
         sail_number=boat.sail_number,
+        boat_class_id=boat.boat_class_id,
         is_default=boat.is_default,
-        created_at=boat.created_at
+        created_at=boat.created_at,
+        boat_class=BoatClassResponse(
+            id=boat.boat_class.id,
+            name=boat.boat_class.name,
+            portsmouth_yardstick=boat.boat_class.portsmouth_yardstick,
+            is_custom=boat.boat_class.is_custom
+        ) if boat.boat_class else None
     )
 
 
@@ -588,6 +629,12 @@ def update_boat(
             detail="Boat not found"
         )
 
+    # Validate boat_class_id if provided
+    if request.boat_class_id:
+        boat_class = db.query(BoatClass).filter(BoatClass.id == request.boat_class_id).first()
+        if not boat_class:
+            raise HTTPException(status_code=400, detail="Invalid boat_class_id")
+
     # If this boat is being marked as default, unmark all others
     if request.is_default and not boat.is_default:
         db.query(Boat).filter(
@@ -598,6 +645,7 @@ def update_boat(
     boat.name = request.name
     boat.klass = request.klass
     boat.sail_number = request.sail_number
+    boat.boat_class_id = request.boat_class_id
     boat.is_default = request.is_default
 
     db.commit()
@@ -609,8 +657,15 @@ def update_boat(
         name=boat.name,
         klass=boat.klass,
         sail_number=boat.sail_number,
+        boat_class_id=boat.boat_class_id,
         is_default=boat.is_default,
-        created_at=boat.created_at
+        created_at=boat.created_at,
+        boat_class=BoatClassResponse(
+            id=boat.boat_class.id,
+            name=boat.boat_class.name,
+            portsmouth_yardstick=boat.boat_class.portsmouth_yardstick,
+            is_custom=boat.boat_class.is_custom
+        ) if boat.boat_class else None
     )
 
 

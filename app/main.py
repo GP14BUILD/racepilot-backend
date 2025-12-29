@@ -93,6 +93,14 @@ except Exception as e:
     payments = None
     PAYMENTS_AVAILABLE = False
 
+try:
+    from .routes import boat_classes
+    BOAT_CLASSES_AVAILABLE = True
+except Exception as e:
+    print(f"Failed to import boat_classes routes: {e}")
+    boat_classes = None
+    BOAT_CLASSES_AVAILABLE = False
+
 app = FastAPI(title="RacePilot API", version="0.1.1")
 
 # Enable CORS for dashboard and mobile app
@@ -581,3 +589,7 @@ if VIDEOS_AVAILABLE and videos:
 if PAYMENTS_AVAILABLE and payments:
     app.include_router(payments.router)
     print("[OK] Payments routes loaded")
+
+if BOAT_CLASSES_AVAILABLE and boat_classes:
+    app.include_router(boat_classes.router, prefix="/boat-classes", tags=["boat-classes"])
+    print("[OK] Boat Classes routes loaded")
