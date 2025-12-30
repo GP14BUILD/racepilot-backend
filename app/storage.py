@@ -78,26 +78,37 @@ class VideoStorage:
         """
         Upload a video file to storage.
 
+        Files are organized by user: videos/user-{user_id}/session-{session_id}_{timestamp}.ext
+        This allows easy browsing of all videos by user.
+
         Returns:
             tuple: (storage_path, file_size)
         """
-        # Generate unique key/path
+        # Generate unique key/path organized by user
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         ext = os.path.splitext(filename)[1].lower()
-        unique_filename = f"{user_id}_{session_id}_{timestamp}{ext}"
+        user_folder = f"user-{user_id}"
+        video_filename = f"session-{session_id}_{timestamp}{ext}"
 
         if self.storage_type == "r2":
-            return self._upload_to_r2(file_obj, unique_filename, content_type)
+            return self._upload_to_r2(file_obj, video_filename, content_type, user_folder)
         else:
-            return self._upload_to_local(file_obj, unique_filename)
+            return self._upload_to_local(file_obj, video_filename, user_folder)
 
     def _upload_to_local(
         self,
         file_obj: BinaryIO,
-        filename: str
+        filename: str,
+        user_folder: str = ""
     ) -> tuple[str, int]:
         """Upload to local filesystem"""
-        file_path = os.path.join(self.upload_dir, filename)
+        # Create user folder if needed
+        if user_folder:
+            user_dir = os.path.join(self.upload_dir, user_folder)
+            os.makedirs(user_dir, exist_ok=True)
+            file_path = os.path.join(user_dir, filename)
+        else:
+            file_path = os.path.join(self.upload_dir, filename)
 
         file_size = 0
         with open(file_path, "wb") as f:
@@ -111,10 +122,15 @@ class VideoStorage:
         self,
         file_obj: BinaryIO,
         filename: str,
-        content_type: str
+        content_type: str,
+        user_folder: str = ""
     ) -> tuple[str, int]:
         """Upload to Cloudflare R2"""
-        key = f"videos/{filename}"
+        # Organize by user folder: videos/user-{user_id}/session-{session_id}_{timestamp}.mp4
+        if user_folder:
+            key = f"videos/{user_folder}/{filename}"
+        else:
+            key = f"videos/{filename}"
 
         # Calculate file size
         file_obj.seek(0, 2)  # Seek to end
