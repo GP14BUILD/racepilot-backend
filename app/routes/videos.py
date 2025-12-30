@@ -1,29 +1,26 @@
 """
 Video upload and management endpoints for RacePilot.
 Allows users to upload race videos and sync them with GPS sessions.
+Supports both local storage and Cloudflare R2.
 """
 
 import os
-import shutil
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.models import User, Video, Session as RaceSession
 from app.auth import get_db, get_current_user
+from app.storage import get_video_storage
 
 router = APIRouter(prefix="/videos", tags=["Videos"])
 
 # Configuration
-UPLOAD_DIR = os.getenv("VIDEO_UPLOAD_DIR", "/data/videos")
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi"}
-
-# Ensure upload directory exists
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # Pydantic models
@@ -63,6 +60,17 @@ def get_file_extension(filename: str) -> str:
 def is_allowed_file(filename: str) -> bool:
     """Check if file extension is allowed"""
     return get_file_extension(filename) in ALLOWED_EXTENSIONS
+
+
+def get_content_type(filename: str) -> str:
+    """Get content type from filename"""
+    ext = get_file_extension(filename)
+    return {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".webm": "video/webm",
+        ".avi": "video/x-msvideo"
+    }.get(ext, "video/mp4")
 
 
 # Endpoints
@@ -106,31 +114,34 @@ async def upload_video(
             detail="Session not found or doesn't belong to you"
         )
 
-    # Generate unique filename
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    ext = get_file_extension(file.filename)
-    unique_filename = f"{current_user.id}_{session_id}_{timestamp}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    # Check file size
+    file.file.seek(0, 2)  # Seek to end
+    file_size = file.file.tell()
+    file.file.seek(0)  # Seek back to beginning
 
-    # Save file
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+
+    # Upload to storage (local or R2)
     try:
-        with open(file_path, "wb") as buffer:
-            file_size = 0
-            while chunk := await file.read(1024 * 1024):  # Read 1MB at a time
-                file_size += len(chunk)
-                if file_size > MAX_FILE_SIZE:
-                    os.remove(file_path)
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
-                    )
-                buffer.write(chunk)
+        storage = get_video_storage()
+        content_type = get_content_type(file.filename)
+
+        storage_path, actual_file_size = storage.upload_file(
+            file_obj=file.file,
+            filename=file.filename,
+            user_id=current_user.id,
+            session_id=session_id,
+            content_type=content_type
+        )
+
     except Exception as e:
-        if os.path.exists(file_path):
-            os.remove(file_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save video: {str(e)}"
+            detail=f"Failed to upload video: {str(e)}"
         )
 
     # Create database record
@@ -139,9 +150,9 @@ async def upload_video(
         user_id=current_user.id,
         club_id=current_user.club_id,
         filename=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        video_url=f"/videos/{session_id}/stream",  # Will be set after creation
+        file_path=storage_path,
+        file_size=actual_file_size,
+        video_url=None,  # Will be set dynamically when accessed
         title=title,
         description=description,
         offset_seconds=offset_seconds,
@@ -153,10 +164,8 @@ async def upload_video(
     db.commit()
     db.refresh(video)
 
-    # Update video_url with actual ID
-    video.video_url = f"/videos/{video.id}/stream"
-    db.commit()
-    db.refresh(video)
+    # Generate video URL
+    video_url = storage.get_url(storage_path)
 
     return VideoResponse(
         id=video.id,
@@ -167,7 +176,7 @@ async def upload_video(
         file_size=video.file_size,
         duration=video.duration,
         thumbnail_url=video.thumbnail_url,
-        video_url=video.video_url,
+        video_url=video_url,
         offset_seconds=video.offset_seconds,
         title=video.title,
         description=video.description,
@@ -200,6 +209,10 @@ def get_video(
 
     user = db.query(User).filter(User.id == video.user_id).first()
 
+    # Generate video URL dynamically
+    storage = get_video_storage()
+    video_url = storage.get_url(video.file_path)
+
     return VideoResponse(
         id=video.id,
         session_id=video.session_id,
@@ -209,7 +222,7 @@ def get_video(
         file_size=video.file_size,
         duration=video.duration,
         thumbnail_url=video.thumbnail_url,
-        video_url=video.video_url,
+        video_url=video_url,
         offset_seconds=video.offset_seconds,
         title=video.title,
         description=video.description,
@@ -241,9 +254,13 @@ def get_session_videos(
         (Video.user_id == current_user.id) | (Video.is_public == True)
     ).order_by(Video.created_at.desc()).all()
 
+    storage = get_video_storage()
     result = []
+
     for video in videos:
         user = db.query(User).filter(User.id == video.user_id).first()
+        video_url = storage.get_url(video.file_path)
+
         result.append(VideoResponse(
             id=video.id,
             session_id=video.session_id,
@@ -253,7 +270,7 @@ def get_session_videos(
             file_size=video.file_size,
             duration=video.duration,
             thumbnail_url=video.thumbnail_url,
-            video_url=video.video_url,
+            video_url=video_url,
             offset_seconds=video.offset_seconds,
             title=video.title,
             description=video.description,
@@ -264,14 +281,20 @@ def get_session_videos(
     return result
 
 
-@router.get("/{video_id}/stream")
-async def stream_video(
-    video_id: int,
+@router.get("/stream/{filename}")
+async def stream_video_by_filename(
+    filename: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Stream video file"""
-    video = db.query(Video).filter(Video.id == video_id).first()
+    """
+    Stream video file by filename (legacy endpoint for local storage).
+    For R2 storage, this redirects to the presigned URL.
+    """
+    # Find video by filename pattern
+    video = db.query(Video).filter(
+        Video.file_path.contains(filename)
+    ).first()
 
     if not video:
         raise HTTPException(
@@ -286,26 +309,28 @@ async def stream_video(
             detail="You don't have permission to view this video"
         )
 
-    if not os.path.exists(video.file_path):
+    storage = get_video_storage()
+
+    # For R2, redirect to presigned URL
+    if storage.storage_type == "r2":
+        video_url = storage.get_url(video.file_path, expires_in=3600)
+        return RedirectResponse(url=video_url)
+
+    # For local storage, stream the file
+    try:
+        file_path = storage.get_file_stream(video.file_path)
+        content_type = get_content_type(video.filename)
+
+        return FileResponse(
+            file_path,
+            media_type=content_type,
+            filename=video.filename
+        )
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Video file not found on server"
         )
-
-    # Return video file with proper content type
-    ext = get_file_extension(video.filename)
-    media_type = {
-        ".mp4": "video/mp4",
-        ".mov": "video/quicktime",
-        ".webm": "video/webm",
-        ".avi": "video/x-msvideo"
-    }.get(ext, "video/mp4")
-
-    return FileResponse(
-        video.file_path,
-        media_type=media_type,
-        filename=video.filename
-    )
 
 
 @router.put("/{video_id}", response_model=VideoResponse)
@@ -345,6 +370,8 @@ def update_video(
     db.refresh(video)
 
     user = db.query(User).filter(User.id == video.user_id).first()
+    storage = get_video_storage()
+    video_url = storage.get_url(video.file_path)
 
     return VideoResponse(
         id=video.id,
@@ -355,7 +382,7 @@ def update_video(
         file_size=video.file_size,
         duration=video.duration,
         thumbnail_url=video.thumbnail_url,
-        video_url=video.video_url,
+        video_url=video_url,
         offset_seconds=video.offset_seconds,
         title=video.title,
         description=video.description,
@@ -386,12 +413,9 @@ def delete_video(
             detail="You don't have permission to delete this video"
         )
 
-    # Delete file from disk
-    if os.path.exists(video.file_path):
-        try:
-            os.remove(video.file_path)
-        except Exception as e:
-            print(f"Failed to delete video file: {e}")
+    # Delete file from storage
+    storage = get_video_storage()
+    storage.delete_file(video.file_path)
 
     # Delete database record
     db.delete(video)
@@ -410,8 +434,12 @@ def list_my_videos(
         Video.user_id == current_user.id
     ).order_by(Video.created_at.desc()).all()
 
+    storage = get_video_storage()
     result = []
+
     for video in videos:
+        video_url = storage.get_url(video.file_path)
+
         result.append(VideoResponse(
             id=video.id,
             session_id=video.session_id,
@@ -421,7 +449,7 @@ def list_my_videos(
             file_size=video.file_size,
             duration=video.duration,
             thumbnail_url=video.thumbnail_url,
-            video_url=video.video_url,
+            video_url=video_url,
             offset_seconds=video.offset_seconds,
             title=video.title,
             description=video.description,
